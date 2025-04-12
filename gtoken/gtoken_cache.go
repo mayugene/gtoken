@@ -2,111 +2,126 @@ package gtoken
 
 import (
 	"context"
+	"fmt"
+	"github.com/gogf/gf/v2/database/gredis"
 	"github.com/gogf/gf/v2/encoding/gjson"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gcache"
 	"github.com/gogf/gf/v2/os/gfile"
+	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/gconv"
-	"time"
 )
 
-// setCache 设置缓存
-func (m *GfToken) setCache(ctx context.Context, cacheKey string, userCache g.Map) Resp {
+func (m *GToken) setCache(ctx context.Context, userToken *UserToken) (ok bool, err error) {
+	// Here we use userKey as cache key
+	// Which means a user could have only one token at the same time, even if in multi-login
 	switch m.CacheMode {
 	case CacheModeCache, CacheModeFile:
-		gcache.Set(ctx, cacheKey, userCache, gconv.Duration(m.Timeout)*time.Millisecond)
+		err = gcache.Set(ctx, userToken.UserKey, userToken, m.ExpireIn)
+		if err != nil {
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorSetCache, err), LogLevelError)
+			return false, fmt.Errorf(errorSetCache)
+		}
 		if m.CacheMode == CacheModeFile {
-			m.writeFileCache(ctx)
+			m.saveToFile(ctx)
 		}
 	case CacheModeRedis:
-		cacheValueJson, err1 := gjson.Encode(userCache)
+		cacheValueJson, err1 := gjson.Encode(userToken)
 		if err1 != nil {
-			g.Log().Error(ctx, "[GToken]cache json encode error", err1)
-			return Error("cache json encode error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorEncodeCache, err1), LogLevelError)
+			return false, fmt.Errorf(errorEncodeCache)
 		}
-		_, err := g.Redis().Do(ctx, "SETEX", cacheKey, m.Timeout/1000, cacheValueJson)
+		// g.Redis().SetEx() only support ttl in seconds
+		// to make it the same as gcache which is in milliseconds, we use g.Redis().Set()
+		expireIn := m.ExpireIn.Milliseconds()
+		_, err = g.Redis().Set(ctx, userToken.UserKey, cacheValueJson, gredis.SetOption{TTLOption: gredis.TTLOption{PX: &expireIn}})
 		if err != nil {
-			g.Log().Error(ctx, "[GToken]cache set error", err)
-			return Error("cache set error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorSetCache, err), LogLevelError)
+			return false, fmt.Errorf(errorSetCache)
 		}
 	default:
-		return Error("cache model error")
+		return false, fmt.Errorf(errorInvalidMode)
 	}
 
-	return Succ(userCache)
+	return true, nil
 }
 
-// getCache 获取缓存
-func (m *GfToken) getCache(ctx context.Context, cacheKey string) Resp {
-	var userCache g.Map
+func (m *GToken) getCache(ctx context.Context, userKey string) (*UserToken, error) {
+	var userToken UserToken
 	switch m.CacheMode {
 	case CacheModeCache, CacheModeFile:
-		userCacheValue, err := gcache.Get(ctx, cacheKey)
+		userCacheValue, err := gcache.Get(ctx, userKey)
 		if err != nil {
-			g.Log().Error(ctx, "[GToken]cache get error", err)
-			return Error("cache get error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorGetCache, err), LogLevelError)
+			return nil, fmt.Errorf(errorGetCache)
 		}
 		if userCacheValue.IsNil() {
-			return Unauthorized("login timeout or not login", "")
+			return nil, fmt.Errorf(errorTokenNotFound)
 		}
-		userCache = gconv.Map(userCacheValue)
-	case CacheModeRedis:
-		userCacheJson, err := g.Redis().Do(ctx, "GET", cacheKey)
+		err = userCacheValue.Scan(&userToken)
 		if err != nil {
-			g.Log().Error(ctx, "[GToken]cache get error", err)
-			return Error("cache get error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorDecodeCache, err), LogLevelError)
+			return nil, fmt.Errorf(errorGetCache)
+		}
+	case CacheModeRedis:
+		// you can use the following code to check ttl in milliseconds
+		// res, err := g.Redis().Do(ctx, "PTTL", userKey)
+		userCacheJson, err := g.Redis().Get(ctx, userKey)
+		if err != nil {
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorGetCache, err), LogLevelError)
+			return nil, fmt.Errorf(errorGetCache)
 		}
 		if userCacheJson.IsNil() {
-			return Unauthorized("login timeout or not login", "")
+			return nil, fmt.Errorf(errorTokenNotFound)
 		}
-
-		err = gjson.DecodeTo(userCacheJson, &userCache)
+		err = userCacheJson.Scan(&userToken)
 		if err != nil {
-			g.Log().Error(ctx, "[GToken]cache get json error", err)
-			return Error("cache get json error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorDecodeCache, err), LogLevelError)
+			return nil, fmt.Errorf(errorDecodeCache)
 		}
 	default:
-		return Error("cache model error")
+		return nil, fmt.Errorf(errorInvalidMode)
 	}
 
-	return Succ(userCache)
+	return &userToken, nil
 }
 
-// removeCache 删除缓存
-func (m *GfToken) removeCache(ctx context.Context, cacheKey string) Resp {
+func (m *GToken) removeCache(ctx context.Context, userKey string) (ok bool, err error) {
 	switch m.CacheMode {
 	case CacheModeCache, CacheModeFile:
-		_, err := gcache.Remove(ctx, cacheKey)
+		_, err = gcache.Remove(ctx, userKey)
 		if err != nil {
 			g.Log().Error(ctx, err)
 		}
 		if m.CacheMode == CacheModeFile {
-			m.writeFileCache(ctx)
+			m.saveToFile(ctx)
 		}
 	case CacheModeRedis:
-		var err error
-		_, err = g.Redis().Do(ctx, "DEL", cacheKey)
+		_, err = g.Redis().Del(ctx, userKey)
 		if err != nil {
-			g.Log().Error(ctx, "[GToken]cache remove error", err)
-			return Error("cache remove error")
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorDeleteCache, err), LogLevelError)
+			return false, fmt.Errorf(errorDeleteCache)
 		}
 	default:
-		return Error("cache model error")
+		return false, fmt.Errorf(errorInvalidMode)
 	}
 
-	return Succ("")
+	return true, nil
 }
 
-func (m *GfToken) writeFileCache(ctx context.Context) {
+func (m *GToken) saveToFile(ctx context.Context) {
 	file := gfile.Temp(CacheModeFileDat)
-	data, e := gcache.Data(ctx)
-	if e != nil {
-		g.Log().Error(ctx, "[GToken]cache writeFileCache error", e)
+	data, err := gcache.Data(ctx)
+	if err != nil {
+		WriteLog(ctx, fmt.Sprintf("%s, %v", errorGetCache, err), LogLevelError)
 	}
-	gfile.PutContents(file, gjson.New(data).MustToJsonString())
+	err = gfile.PutContents(file, gjson.New(data).MustToJsonString())
+	if err != nil {
+		WriteLog(ctx, fmt.Sprintf("%s, %v", errorWriteFile, err), LogLevelError)
+	}
 }
 
-func (m *GfToken) initFileCache(ctx context.Context) {
+func (m *GToken) initCacheModeFile(ctx context.Context) {
 	file := gfile.Temp(CacheModeFileDat)
 	if !gfile.Exists(file) {
 		return
@@ -117,6 +132,20 @@ func (m *GfToken) initFileCache(ctx context.Context) {
 		return
 	}
 	for k, v := range maps {
-		gcache.Set(ctx, k, v, gconv.Duration(m.Timeout)*time.Millisecond)
+		// Avoid using m.ExpireIn
+		// Since loading tokens from files, the interval should not be reset
+		var token UserToken
+		err := gconv.Struct(v, &token)
+		if err != nil {
+			continue
+		}
+		tokenExpireIn := token.ExpireAt.Sub(gtime.Now())
+		if tokenExpireIn <= 0 {
+			continue
+		}
+		err = gcache.Set(ctx, k, v, tokenExpireIn)
+		if err != nil {
+			WriteLog(ctx, fmt.Sprintf("%s, %v", errorSetCache, err), LogLevelError)
+		}
 	}
 }

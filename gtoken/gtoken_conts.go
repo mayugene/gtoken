@@ -1,53 +1,39 @@
 package gtoken
 
 import (
-	"fmt"
+	"time"
 )
 
 const (
-	CacheModeCache   = 1
-	CacheModeRedis   = 2
-	CacheModeFile    = 3
+	CacheModeCache   = 0
+	CacheModeRedis   = 1
+	CacheModeFile    = 2
 	CacheModeFileDat = "gtoken.dat"
 
-	MiddlewareTypeGroup  = 1
-	MiddlewareTypeBind   = 2
-	MiddlewareTypeGlobal = 3
+	DefaultExpireIn      = 7 * 24 * time.Hour
+	DefaultEncryptKey    = "g1t@o3K!e7n"
+	DefaultTokenIdLength = 12
 
-	DefaultTimeout        = 10 * 24 * 60 * 60 * 1000
-	DefaultCacheKey       = "GToken:"
-	DefaultTokenDelimiter = "_"
-	DefaultEncryptKey     = "12345678912345678912345678912345"
-	DefaultAuthFailMsg    = "请求错误或登录超时"
+	TokenKeyInRequest = "token" // ok for: router, query, body, form, custom
 
-	TraceId = "d5dfce77cdff812161134e55de3c5207"
-
-	KeyUserKey     = "userKey"
-	KeyRefreshTime = "refreshTime"
-	KeyCreateTime  = "createTime"
-	KeyUuid        = "uuid"
-	KeyData        = "data"
-	KeyToken       = "token"
+	DefaultLogPrefix = "[GToken]"
 )
 
 const (
-	DefaultLogPrefix   = "[GToken]" // 日志前缀
-	MsgLogoutSucc      = "Logout success"
-	MsgErrInitFail     = "InitConfig fail"
-	MsgErrNotSet       = "%s not set, error"
-	MsgErrUserKeyEmpty = "userKey is empty"
-	MsgErrReqMethod    = "request method is error! "
-	MsgErrAuthHeader   = "Authorization : %s get token key fail"
-	MsgErrTokenEmpty   = "token is empty"
-	MsgErrTokenEncrypt = "token encrypt error"
-	MsgErrTokenDecode  = "token decode error"
-	MsgErrTokenLen     = "token len error"
-	MsgErrAuthUuid     = "user auth uuid error"
+	codeUnauthorized   = 401
+	errorUserKeyEmpty  = "userKey is empty"
+	errorReqMethod     = "request method is error! "
+	errorAuthHeader    = "Authorization : %s get token key fail"
+	errorTokenEmpty    = "token is empty"
+	errorTokenEncrypt  = "token encrypt error"
+	errorTokenDecode   = "token decode error"
+	errorSetCache      = "set cache error"
+	errorGetCache      = "get cache error"
+	errorDeleteCache   = "delete cache error"
+	errorDecodeCache   = "decode cache error"
+	errorEncodeCache   = "encode cache error"
+	errorInvalidMode   = "invalid mode"
+	errorWriteFile     = "write file error"
+	errorTokenNotFound = "token not found"
+	errorUnauthorized  = "unauthorized"
 )
-
-func msgLog(msg string, params ...interface{}) string {
-	if len(params) == 0 {
-		return DefaultLogPrefix + msg
-	}
-	return DefaultLogPrefix + fmt.Sprintf(msg, params...)
-}

@@ -1,0 +1,13 @@
+server:
+  address: "127.0.0.1:8081"
+
+auth:
+  cacheMode: 0  # 0 gcache 1 gredis 2 file
+  multiLogin: true
+  publicPaths: "post:/user/public,/hello"
+
+redis:
+  default:
+    address: 127.0.0.1:6379
+    db: 0
+    pass:

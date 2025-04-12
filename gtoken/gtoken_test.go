@@ -2,226 +2,100 @@ package gtoken_test
 
 import (
 	"context"
-	"github.com/goflyfox/gtoken/gtoken"
+	_ "github.com/gogf/gf/contrib/nosql/redis/v2"
+	"github.com/gogf/gf/v2/database/gredis"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/mayugene/gtoken/gtoken"
 	"testing"
 )
 
-func TestAuthPathGlobal(t *testing.T) {
-	ctx := context.Background()
-
-	t.Log("Global auth path test ")
-	// 启动gtoken
-	gfToken := &gtoken.GfToken{
-		//Timeout:         10 * 1000,
-		AuthPaths:        g.SliceStr{"/user", "/system"},             // 这里是按照前缀拦截，拦截/user /user/list /user/add ...
-		AuthExcludePaths: g.SliceStr{"/user/info", "/system/user/*"}, // 不拦截路径  /user/info,/system/user/info,/system/user,
-		MiddlewareType:   gtoken.MiddlewareTypeGlobal,                // 开启全局拦截
-	}
-
-	authPath(gfToken, t)
-	flag := gfToken.AuthPath(ctx, "/test")
-	if flag {
-		t.Error("error:", "/test auth path error")
-	}
-
-}
-
-func TestBindAuthPath(t *testing.T) {
-	t.Log("Bind auth path test ")
-	// 启动gtoken
-	gfToken := &gtoken.GfToken{
-		//Timeout:         10 * 1000,
-		AuthPaths:        g.SliceStr{"/user", "/system"},             // 这里是按照前缀拦截，拦截/user /user/list /user/add ...
-		AuthExcludePaths: g.SliceStr{"/user/info", "/system/user/*"}, // 不拦截路径  /user/info,/system/user/info,/system/user,
-		MiddlewareType:   gtoken.MiddlewareTypeBind,                  // 开启局部拦截
-	}
-
-	authPath(gfToken, t)
-}
-
-func TestGroupAuthPath(t *testing.T) {
-	ctx := context.Background()
-
-	t.Log("Group auth path test ")
-	// 启动gtoken
-	gfToken := &gtoken.GfToken{
-		//Timeout:         10 * 1000,
-		AuthExcludePaths: g.SliceStr{"/user/info", "/system/user/*"}, // 不拦截路径  /user/info,/system/user/info,/system/user,
-		LoginPath:        "/login",                                   // 登录路径
-		MiddlewareType:   gtoken.MiddlewareTypeGroup,                 // 开启组拦截
-	}
-
-	flag := gfToken.AuthPath(ctx, "/login")
-	if flag {
-		t.Error("error:", "/login auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/user/info")
-	if flag {
-		t.Error("error:", "/user/info auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/system/user/info")
-	if flag {
-		t.Error("error:", "/system/user/info auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/system/test")
-	if !flag {
-		t.Error("error:", "/system/test auth path error")
-	}
-}
-
-func TestAuthPathNoExclude(t *testing.T) {
-	ctx := context.Background()
-
-	t.Log("auth no exclude path test ")
-	// 启动gtoken
-	gfToken := &gtoken.GfToken{
-		//Timeout:         10 * 1000,
-		AuthPaths:      g.SliceStr{"/user", "/system"}, // 这里是按照前缀拦截，拦截/user /user/list /user/add ...
-		MiddlewareType: gtoken.MiddlewareTypeGlobal,    // 关闭全局拦截
-	}
-
-	authFlag := gfToken.AuthPath
-	if authFlag(ctx, "/test") {
-		t.Error(ctx, "error:", "/test auth path error")
-	}
-	if !authFlag(ctx, "/system/dept") {
-		t.Error(ctx, "error:", "/system/dept auth path error")
-	}
-
-	if !authFlag(ctx, "/user/info") {
-		t.Error(ctx, "error:", "/user/info auth path error")
-	}
-
-	if !authFlag(ctx, "/system/user") {
-		t.Error(ctx, "error:", "/system/user auth path error")
-	}
-}
-
-func TestAuthPathExclude(t *testing.T) {
-	ctx := context.Background()
-
-	t.Log("auth path test ")
-	// 启动gtoken
-	gfToken := &gtoken.GfToken{
-		//Timeout:         10 * 1000,
-		AuthPaths:        g.SliceStr{"/*"},                           // 这里是按照前缀拦截，拦截/user /user/list /user/add ...
-		AuthExcludePaths: g.SliceStr{"/user/info", "/system/user/*"}, // 不拦截路径  /user/info,/system/user/info,/system/user,
-		MiddlewareType:   gtoken.MiddlewareTypeGlobal,                // 开启全局拦截
-	}
-
-	authFlag := gfToken.AuthPath
-	if !authFlag(ctx, "/test") {
-		t.Error("error:", "/test auth path error")
-	}
-	if !authFlag(ctx, "//system/dept") {
-		t.Error("error:", "/system/dept auth path error")
-	}
-
-	if authFlag(ctx, "/user/info") {
-		t.Error("error:", "/user/info auth path error")
-	}
-
-	if authFlag(ctx, "/system/user") {
-		t.Error("error:", "/system/user auth path error")
-	}
-
-	if authFlag(ctx, "/system/user/info") {
-		t.Error("error:", "/system/user/info auth path error")
-	}
-
-}
-
-func authPath(gfToken *gtoken.GfToken, t *testing.T) {
-	ctx := context.Background()
-
-	flag := gfToken.AuthPath(ctx, "/user/info")
-	if flag {
-		t.Error("error:", "/user/info auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/system/user")
-	if flag {
-		t.Error("error:", "/system/user auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/system/user/info")
-	if flag {
-		t.Error("error:", "/system/user/info auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/system/dept")
-	if !flag {
-		t.Error("error:", "/system/dept auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/user/list")
-	if !flag {
-		t.Error("error:", "/user/list auth path error")
-	}
-
-	flag = gfToken.AuthPath(ctx, "/user/add")
-	if !flag {
-		t.Error("error:", "/user/add auth path error")
-	}
-}
+var userKey = "123123"
 
 func TestEncryptDecryptToken(t *testing.T) {
-	t.Log("encrypt and decrypt token test ")
+	t.Log("test: encrypt and decrypt token")
 	ctx := context.Background()
 
-	gfToken := gtoken.GfToken{}
-	gfToken.InitConfig()
+	t.Run("test gcache", func(t *testing.T) {
+		t.Log("use cache mode: gcache")
+		gToken := &gtoken.GToken{}
+		gToken.Init(ctx)
+		testEncryptDecrypt(t, ctx, gToken)
+	})
 
-	userKey := "123123"
-	token := gfToken.EncryptToken(ctx, userKey, "")
-	if !token.Success() {
-		t.Error(token.Json())
-	}
-	t.Log(token.DataString())
+	t.Run("test file cache", func(t *testing.T) {
+		t.Log("use cache mode: file")
+		gToken := &gtoken.GToken{CacheMode: gtoken.CacheModeFile}
+		gToken.Init(ctx)
+		testEncryptDecrypt(t, ctx, gToken)
+	})
 
-	token2 := gfToken.DecryptToken(ctx, token.GetString("token"))
-	if !token2.Success() {
-		t.Error(token2.Json())
-	}
-	t.Log(token2.DataString())
-	if userKey != token2.GetString("userKey") {
-		t.Error("error:", "token decrypt userKey error")
-	}
-	if token.GetString("uuid") != token2.GetString("uuid") {
-		t.Error("error:", "token decrypt uuid error")
-	}
-
+	t.Run("test redis cache", func(t *testing.T) {
+		t.Log("use cache mode: redis")
+		// Although it is convenient to use g.Redis()
+		// But don't forget to import _ "github.com/gogf/gf/contrib/nosql/redis/v2", or it will panic
+		redisConfig := gredis.Config{
+			Address: "127.0.0.1:6379",
+			Db:      1,
+			Pass:    "",
+		}
+		gredis.SetConfig(&redisConfig)
+		gToken := &gtoken.GToken{CacheMode: gtoken.CacheModeRedis}
+		gToken.Init(ctx)
+		_, err := g.Redis().DBSize(ctx)
+		if err != nil {
+			t.Error("test redis failed: cannot connect to redis server")
+		} else {
+			testEncryptDecrypt(t, ctx, gToken)
+		}
+	})
 }
 
 func BenchmarkEncryptDecryptToken(b *testing.B) {
-	b.Log("encrypt and decrypt token test ")
+	b.Log("benchmark: encrypt and decrypt token")
 
 	ctx := context.Background()
-	gfToken := gtoken.GfToken{}
-	gfToken.InitConfig()
+	gToken := gtoken.GToken{}
+	gToken.Init(ctx)
 
-	userKey := "123123"
-	token := gfToken.EncryptToken(ctx, userKey, "")
-	if !token.Success() {
-		b.Error(token.Json())
+	newToken, err := gToken.NewToken(ctx, userKey, nil)
+	if err != nil {
+		b.Error(err)
 	}
-	b.Log(token.DataString())
+	validateToken, err := gToken.ValidateToken(ctx, newToken.Token)
+	if err != nil {
+		b.Error(err)
+	}
+	if validateToken.UserKey != userKey {
+		b.Error(validateToken.UserKey)
+	}
+}
 
-	for i := 0; i < b.N; i++ {
-		token2 := gfToken.DecryptToken(ctx, token.GetString("token"))
-		if !token2.Success() {
-			b.Error(token2.Json())
-		}
-		b.Log(token2.DataString())
-		if userKey != token2.GetString("userKey") {
-			b.Error("error:", "token decrypt userKey error")
-		}
-		if token.GetString("uuid") != token2.GetString("uuid") {
-			b.Error("error:", "token decrypt uuid error")
-		}
+func testEncryptDecrypt(t *testing.T, ctx context.Context, gToken *gtoken.GToken) {
+	t.Log("1. encrypt token")
+	newToken, err := gToken.NewToken(ctx, userKey, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	t.Log("2. validate token")
+	validateToken, err := gToken.ValidateToken(ctx, newToken.Token)
+	if err != nil {
+		t.Error(err)
+	}
+	if validateToken.UserKey != userKey {
+		t.Error(validateToken.UserKey)
+	}
+	t.Log("3. remove token and validate token again")
+	ok, err := gToken.RemoveToken(ctx, newToken.Token)
+	if err != nil {
+		t.Error(err)
+	}
+	if !ok {
+		t.Error("remove token failed")
+	}
+	validateToken1, _ := gToken.ValidateToken(ctx, newToken.Token)
+	if validateToken1 != nil {
+		t.Error("token is not removed")
+	} else {
+		t.Log("token has been removed correctly")
 	}
 }
