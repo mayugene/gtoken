@@ -8,6 +8,7 @@ import (
 	"github.com/mayugene/gtoken/example/internal/cmd"
 	"github.com/mayugene/gtoken/example/internal/model"
 	"github.com/mayugene/gtoken/example/internal/service"
+	"github.com/mayugene/gtoken/gtoken"
 )
 
 type sAuth struct{}
@@ -26,24 +27,25 @@ func (s *sAuth) Login(ctx context.Context, req model.AuthLoginInput) (res *model
 		return nil, fmt.Errorf("wrong password")
 	}
 
-	token, err := cmd.UseGToken().NewToken(ctx, customUserKey(req.Username), g.Map{"id": 33, "username": req.Username, "nickname": "john"})
+	userId := ""
+	if req.Username == "admin" {
+		userId = "99"
+	}
+
+	newToken, _, err := cmd.UseGToken().NewToken(ctx, userId, g.Map{"id": 33, "username": req.Username, "nickname": "john"})
 	if err != nil {
 		return nil, err
 	}
 
 	return &model.AuthLoginOutput{
 		TokenType: "Bearer",
-		Token:     token.Token,
-		ExpireIn:  token.ExpireAt.Timestamp() - token.CreateAt.Timestamp(),
+		Token:     newToken,
+		ExpireIn:  int64(cmd.UseGToken().ExpireIn.Seconds()),
 		Username:  req.Username,
 	}, nil
 }
 
 func (s *sAuth) Logout(ctx context.Context) (bool, error) {
-	token := cmd.UseGToken().ParseRequestToken(g.RequestFromCtx(ctx))
+	token := gtoken.ParseRequestToken(g.RequestFromCtx(ctx))
 	return cmd.UseGToken().RemoveToken(ctx, token)
-}
-
-func customUserKey(in string) string {
-	return fmt.Sprintf("%s%s", "customTag:", in)
 }

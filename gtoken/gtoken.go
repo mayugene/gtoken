@@ -3,35 +3,32 @@ package gtoken
 import (
 	"context"
 	"fmt"
+	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gtime"
-	"github.com/golang-jwt/jwt/v5"
 	"net/http"
-	"strings"
 	"time"
 )
 
 type GToken struct {
 	CacheMode        uint8                                       // 0 cache (default) 1 redis 2 file
 	ExpireIn         time.Duration                               // how long a token will be invalid
-	AutoRefreshToken bool                                        // whether refresh a token automatically. It is a big risk to use "true" in production.
+	SingleSession    bool                                        // if true, only one token can be kept, so the old one will be deleted
+	AutoRefreshToken bool                                        // whether refresh a token automatically. It is a big risk to use "true" in production
 	SecretKey        []byte                                      // jwt secret key, why use []byte: https://golang-jwt.github.io/jwt/usage/signing_methods/#frequently-asked-questions
-	TokenIdLength    uint8                                       // length of NanoId, default 12
-	MultiLogin       bool                                        // To be simple, if true, will return the same token while token is still valid
-	PublicPaths      []string                                    // Non-auth paths. Support restful formats like "POST:/login".
-	DoBeforeAuth     func(r *ghttp.Request) (ok bool)            // Generally, we omit the file requests in this func
-	DoAfterAuth      func(r *ghttp.Request, ok bool, data g.Map) // Generally, we add info into context in this func
+	TokenIDLength    uint8                                       // length of NanoID, default 12
+	PublicPaths      []string                                    // non-auth paths. Support restful formats like "POST:/login"
+	DoBeforeAuth     func(r *ghttp.Request) (ok bool)            // generally, we omit the file requests in this func
+	DoAfterAuth      func(r *ghttp.Request, ok bool, data g.Map) // generally, we add info into context in this func
 }
 
-type UserToken struct {
-	ID        string      `json:"id"`
-	UserKey   string      `json:"userKey"`
-	Token     string      `json:"token"`
-	CreateAt  *gtime.Time `json:"createAt"`
-	RefreshAt *gtime.Time `json:"refreshAt"`
-	ExpireAt  *gtime.Time `json:"expireAt"`
+type TokenInfo struct {
+	UserID    string      `json:"userID"`
+	TokenID   string      `json:"tokenID"`
 	ExtraData g.Map       `json:"extraData"`
+	ExpireAt  *gtime.Time `json:"ExpireAt"`
+	RefreshAt *gtime.Time `json:"RefreshAt"`
 }
 
 type DefaultResponse struct {
@@ -41,76 +38,83 @@ type DefaultResponse struct {
 }
 
 // NewToken returns a new token
-func (m *GToken) NewToken(ctx context.Context, userKey string, extraData g.Map) (*UserToken, error) {
-	// under multi-login, token will be reused and refreshed automatically
-	if m.MultiLogin {
-		existedToken, _ := m.getCachedToken(ctx, userKey)
-		if existedToken != nil {
-			return existedToken, nil
+func (m *GToken) NewToken(ctx context.Context, userID string, extraData g.Map) (token string, tokenInfo *TokenInfo, err error) {
+	// if SingleSession is false, a user can create tokens without limitation.
+	// else, only one token could be kept. (The new token will replace the old one)
+	if userID == "" {
+		return "", nil, fmt.Errorf("a valid userId is required")
+	}
+
+	if m.SingleSession {
+		// delete the old one
+		ok, err1 := m.removeUserCache(ctx, userID)
+		if err1 != nil {
+			return "", nil, err1
+		}
+		if !ok {
+			return "", nil, fmt.Errorf(gcode.CodeInternalError.Message())
 		}
 	}
 
-	newToken, err := m.encrypt(userKey)
+	newToken, newTokenID, err := m.encrypt()
 	if err != nil {
-		return nil, err
+		return "", nil, err
+	}
+	tokenInfo = &TokenInfo{
+		UserID:    userID,
+		TokenID:   newTokenID,
+		ExtraData: extraData,
+		ExpireAt:  gtime.Now().Add(m.ExpireIn),
+		RefreshAt: gtime.Now().Add(m.ExpireIn / 2),
 	}
 
-	newToken.CreateAt = gtime.Now()
-	newToken.ExpireAt = newToken.CreateAt.Add(m.ExpireIn)
-	newToken.RefreshAt = newToken.CreateAt.Add(m.ExpireIn / 2) // use m.ExpireIn / 2 as refresh interval
-	newToken.ExtraData = extraData
-
-	ok, err := m.setCache(ctx, newToken)
-	if ok {
-		return newToken, nil
+	ok, err := m.setTokenCache(ctx, newToken, tokenInfo)
+	if !ok {
+		return "", nil, err
 	}
-	return nil, err
+	return newToken, tokenInfo, nil
 }
 
-// ValidateToken returns a valid token or nil
-func (m *GToken) ValidateToken(ctx context.Context, token string) (*UserToken, error) {
-	userKey, tokenId, err := m.decrypt(token)
+// ValidateToken returns token info. If AutoRefreshToken is true, refresh token ttl.
+func (m *GToken) ValidateToken(ctx context.Context, token string) (*TokenInfo, error) {
+	tokenInfo, err := m.getTokenCache(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 
-	userToken, err := m.getCachedToken(ctx, userKey)
-	if err != nil {
-		return nil, err
-	}
-	// if id does not match, it might be tampered
-	if userToken.ID != tokenId {
-		return nil, fmt.Errorf(errorTokenNotFound)
+	// handle auto refresh token
+	if m.AutoRefreshToken && gtime.Now().Sub(tokenInfo.RefreshAt) > 0 {
+		tokenInfo.ExpireAt = gtime.Now().Add(m.ExpireIn)
+		tokenInfo.RefreshAt = gtime.Now().Add(m.ExpireIn / 2)
+		if ok, err1 := m.refreshTokenCache(ctx, token, tokenInfo); ok {
+			return tokenInfo, nil
+		} else {
+			return nil, err1
+		}
 	}
 
-	return userToken, nil
+	return tokenInfo, nil
 }
 
 // RemoveToken deletes Token
 func (m *GToken) RemoveToken(ctx context.Context, token string) (ok bool, err error) {
-	userKey, _, err := m.decrypt(token)
-	if err != nil {
-		return false, err
-	}
-
-	return m.removeCache(ctx, userKey)
+	return m.removeTokenCache(ctx, token)
 }
 
-// Init 初始化配置信息
 func (m *GToken) Init(ctx context.Context) bool {
 	if m.CacheMode == CacheModeFile {
-		m.initCacheModeFile(ctx)
+		initCacheModeFile(ctx)
 	}
 	if m.ExpireIn == 0 {
 		m.ExpireIn = DefaultExpireIn
 	}
 
 	if len(m.SecretKey) == 0 {
-		m.SecretKey = []byte(DefaultEncryptKey)
+		m.SecretKey = []byte(DefaultSecretKey)
 	}
 
-	if m.TokenIdLength == 0 {
-		m.TokenIdLength = DefaultTokenIdLength
+	if m.TokenIDLength == 0 {
+		m.TokenIDLength = DefaultTokenIDLength
 	}
 
 	if m.DoBeforeAuth == nil {
@@ -141,7 +145,7 @@ func (m *GToken) Init(ctx context.Context) bool {
 					fmt.Sprintf("[AUTH_%s][url:%s][params:%s]", gtime.Now().String(), r.URL.Path, params),
 				)
 				r.Response.WriteJson(DefaultResponse{
-					Code: codeUnauthorized,
+					Code: DefaultCodeUnauthorized,
 					Msg:  errorUnauthorized,
 					Data: data,
 				})
@@ -177,7 +181,7 @@ func (m *GToken) authMiddleware(r *ghttp.Request) {
 
 	// perform auth
 	// first get token from request
-	token := m.ParseRequestToken(r)
+	token := ParseRequestToken(r)
 	var ok bool
 	var extraData g.Map
 	if token != "" {
@@ -190,84 +194,12 @@ func (m *GToken) authMiddleware(r *ghttp.Request) {
 	m.DoAfterAuth(r, ok, extraData)
 }
 
-// ParseRequestToken tries to get token from the following path by priority:
-// 1. header.Authorization
-// 2. token
-func (m *GToken) ParseRequestToken(r *ghttp.Request) string {
-	// 1. from header.Authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader != "" {
-		parts := strings.SplitN(authHeader, " ", 2)
-		if !(len(parts) == 2 && parts[0] == "Bearer") {
-			WriteLog(r.Context(), fmt.Sprintf("%s, %s", errorAuthHeader, authHeader), LogLevelWarning)
-			return ""
-		} else if parts[1] == "" {
-			WriteLog(r.Context(), fmt.Sprintf("%s, %s", errorAuthHeader, authHeader), LogLevelWarning)
-			return ""
-		}
-
-		return parts[1]
-	}
-	// 2. from token
-	return r.Get(TokenKeyInRequest).String()
-}
-
-// getCachedToken gets token by userKey
-func (m *GToken) getCachedToken(ctx context.Context, userKey string) (*UserToken, error) {
-	userToken, err := m.getCache(ctx, userKey)
-	if err != nil {
-		return nil, err
-	}
-
-	// handle auto refresh token
-	if m.AutoRefreshToken && gtime.Now().Sub(userToken.RefreshAt) > 0 {
-		userToken.CreateAt = gtime.Now()
-		userToken.ExpireAt = userToken.CreateAt.Add(m.ExpireIn)
-		userToken.RefreshAt = userToken.CreateAt.Add(m.ExpireIn / 2)
-		if ok, err1 := m.setCache(ctx, userToken); ok {
-			return userToken, nil
-		} else {
-			return nil, err1
-		}
-	}
-
-	return userToken, nil
-}
-
 // encrypt return a valid token
-func (m *GToken) encrypt(userKey string) (*UserToken, error) {
-	if userKey == "" {
-		return nil, fmt.Errorf(errorUserKeyEmpty)
-	}
-	tokenId := GetNanoId(m.TokenIdLength)
-	jwtToken := jwt.NewWithClaims(
-		jwt.SigningMethodHS256,
-		jwt.RegisteredClaims{ID: tokenId, Issuer: userKey},
-	)
-	token, err := jwtToken.SignedString(m.SecretKey)
+func (m *GToken) encrypt() (token string, id string, err error) {
+	id = getNanoID(m.TokenIDLength)
+	token, err = encryptJWT(m.SecretKey, id)
 	if err != nil {
-		return nil, fmt.Errorf(errorTokenEncrypt)
+		return "", "", fmt.Errorf(errorTokenEncrypt)
 	}
-	return &UserToken{
-		ID:      tokenId,
-		UserKey: userKey,
-		Token:   token,
-	}, nil
-}
-
-// decrypt returns userKey and tokenId
-func (m *GToken) decrypt(token string) (userKey string, tokenId string, err error) {
-	if token == "" {
-		return "", "", fmt.Errorf(errorTokenEmpty)
-	}
-	parse, err := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return m.SecretKey, nil
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
-	if err != nil {
-		return
-	}
-	if !parse.Valid {
-		return "", "", fmt.Errorf(errorTokenDecode)
-	}
-	return parse.Claims.(*jwt.RegisteredClaims).Issuer, parse.Claims.(*jwt.RegisteredClaims).ID, nil
+	return token, id, nil
 }

@@ -3,7 +3,7 @@ server:
 
 auth:
   cacheMode: 0  # 0 gcache 1 gredis 2 file
-  multiLogin: true
+  singleSession: false
   publicPaths: "post:/user/public,/hello"
 
 redis:

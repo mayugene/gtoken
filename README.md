@@ -6,7 +6,7 @@ This repo is based on the great work of https://github.com/goflyfox/gtoken. It o
 3. Support refresh jwt automatically.
 4. Support GoFrame v2.*. Currently, it's 2.9.0.
 5. Work as a group routing middleware(best practise of GoFrame).
-6. NanoId is used to reduce token bytes.
+6. NanoID is used to reduce token bytes.
 
 ## Documents
 1. Cache mode
@@ -33,8 +33,8 @@ This repo is based on the great work of https://github.com/goflyfox/gtoken. It o
    - gtoken is designed to avoid writing response directly.
    - A custom response can be applied by defining a new DoAfterAuth.
 7. Token length
-   - NanoId is used so that the token id length can be customized
-   - Please refer to: https://zelark.github.io/nano-id-cc/ for more information about NanoId collision.
+   - NanoID is used so that the token id length can be customized
+   - Please refer to: https://zelark.github.io/nano-id-cc/ for more information about NanoID collision.
 8. Refer to gtoken.GToken to get more parameter details
 
 ## Usage

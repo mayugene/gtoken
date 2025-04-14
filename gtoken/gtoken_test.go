@@ -9,7 +9,10 @@ import (
 	"testing"
 )
 
-var userKey = "123123"
+var (
+	userId       = "ab3cl2"
+	redisAddress = "127.0.0.1:6379"
+)
 
 func TestEncryptDecryptToken(t *testing.T) {
 	t.Log("test: encrypt and decrypt token")
@@ -20,6 +23,7 @@ func TestEncryptDecryptToken(t *testing.T) {
 		gToken := &gtoken.GToken{}
 		gToken.Init(ctx)
 		testEncryptDecrypt(t, ctx, gToken)
+		testExtraData(t, ctx, gToken)
 	})
 
 	t.Run("test file cache", func(t *testing.T) {
@@ -27,6 +31,7 @@ func TestEncryptDecryptToken(t *testing.T) {
 		gToken := &gtoken.GToken{CacheMode: gtoken.CacheModeFile}
 		gToken.Init(ctx)
 		testEncryptDecrypt(t, ctx, gToken)
+		testExtraData(t, ctx, gToken)
 	})
 
 	t.Run("test redis cache", func(t *testing.T) {
@@ -34,7 +39,7 @@ func TestEncryptDecryptToken(t *testing.T) {
 		// Although it is convenient to use g.Redis()
 		// But don't forget to import _ "github.com/gogf/gf/contrib/nosql/redis/v2", or it will panic
 		redisConfig := gredis.Config{
-			Address: "127.0.0.1:6379",
+			Address: redisAddress,
 			Db:      1,
 			Pass:    "",
 		}
@@ -46,6 +51,7 @@ func TestEncryptDecryptToken(t *testing.T) {
 			t.Error("test redis failed: cannot connect to redis server")
 		} else {
 			testEncryptDecrypt(t, ctx, gToken)
+			testExtraData(t, ctx, gToken)
 		}
 	})
 }
@@ -57,45 +63,71 @@ func BenchmarkEncryptDecryptToken(b *testing.B) {
 	gToken := gtoken.GToken{}
 	gToken.Init(ctx)
 
-	newToken, err := gToken.NewToken(ctx, userKey, nil)
+	newToken, _, err := gToken.NewToken(ctx, userId, nil)
 	if err != nil {
 		b.Error(err)
 	}
-	validateToken, err := gToken.ValidateToken(ctx, newToken.Token)
+	validatedInfo, err := gToken.ValidateToken(ctx, newToken)
 	if err != nil {
 		b.Error(err)
 	}
-	if validateToken.UserKey != userKey {
-		b.Error(validateToken.UserKey)
+	if validatedInfo.UserID != userId {
+		b.Error("validate token failed")
 	}
 }
 
 func testEncryptDecrypt(t *testing.T, ctx context.Context, gToken *gtoken.GToken) {
 	t.Log("1. encrypt token")
-	newToken, err := gToken.NewToken(ctx, userKey, nil)
+	newToken, _, err := gToken.NewToken(ctx, userId, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	t.Log("2. validate token")
-	validateToken, err := gToken.ValidateToken(ctx, newToken.Token)
+	validatedInfo, err := gToken.ValidateToken(ctx, newToken)
 	if err != nil {
 		t.Error(err)
 	}
-	if validateToken.UserKey != userKey {
-		t.Error(validateToken.UserKey)
+	if validatedInfo.UserID != userId {
+		t.Error("validate token failed")
 	}
 	t.Log("3. remove token and validate token again")
-	ok, err := gToken.RemoveToken(ctx, newToken.Token)
+	ok, err := gToken.RemoveToken(ctx, newToken)
 	if err != nil {
 		t.Error(err)
 	}
 	if !ok {
 		t.Error("remove token failed")
 	}
-	validateToken1, _ := gToken.ValidateToken(ctx, newToken.Token)
-	if validateToken1 != nil {
+	validateInfo1, _ := gToken.ValidateToken(ctx, newToken)
+	if validateInfo1 != nil {
 		t.Error("token is not removed")
 	} else {
 		t.Log("token has been removed correctly")
+	}
+}
+
+func testExtraData(t *testing.T, ctx context.Context, gToken *gtoken.GToken) {
+	t.Log("1. encrypt token with extra data")
+	testUsername := "John Doe"
+	testRole := "super-admin"
+	newToken, _, err := gToken.NewToken(ctx, userId, g.Map{"username": testUsername, "role": testRole})
+	if err != nil {
+		t.Error(err)
+	}
+	t.Log("2. validate token with extra data")
+	validatedInfo, err := gToken.ValidateToken(ctx, newToken)
+	if err != nil {
+		t.Error(err)
+	}
+	if validatedInfo.ExtraData["username"].(string) != testUsername || validatedInfo.ExtraData["role"].(string) != testRole {
+		t.Error("validate token with extra data failed")
+	}
+	t.Log("3. remove token and validate token again")
+	ok, err := gToken.RemoveToken(ctx, newToken)
+	if err != nil {
+		t.Error(err)
+	}
+	if !ok {
+		t.Error("remove token failed")
 	}
 }

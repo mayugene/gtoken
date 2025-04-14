@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -24,18 +23,17 @@ var (
 func UseGToken() *gtoken.GToken {
 	once.Do(func() {
 		ctx := context.TODO()
-		a, _ := g.Cfg().Data(ctx)
-		fmt.Println("in use: ", a)
-		cacheMode, _ := g.Cfg().Get(ctx, "auth.cacheMode")     // err can be omitted
-		multiLogin, _ := g.Cfg().Get(ctx, "auth.multiLogin")   // err can be omitted
-		publicPaths, _ := g.Cfg().Get(ctx, "auth.publicPaths") // err can be omitted
+		// err can be omitted while getting configs
+		cacheMode, _ := g.Cfg().Get(ctx, "auth.cacheMode")
+		singleSession, _ := g.Cfg().Get(ctx, "auth.singleSession")
+		publicPaths, _ := g.Cfg().Get(ctx, "auth.publicPaths")
 		autoRefreshToken, _ := g.Cfg().Get(ctx, "auth.autoRefreshToken")
 		expireIn, _ := g.Cfg().Get(ctx, "auth.expireIn")
 
 		gToken = &gtoken.GToken{
 			CacheMode:        cacheMode.Uint8(),
 			PublicPaths:      strings.Split(publicPaths.String(), ","),
-			MultiLogin:       multiLogin.Bool(),
+			SingleSession:    singleSession.Bool(),
 			AutoRefreshToken: autoRefreshToken.Bool(),
 			ExpireIn:         time.Duration(expireIn.Int64()) * time.Second,
 		}

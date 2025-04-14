@@ -11,19 +11,24 @@ const (
 	CacheModeFileDat = "gtoken.dat"
 
 	DefaultExpireIn      = 7 * 24 * time.Hour
-	DefaultEncryptKey    = "g1t@o3K!e7n"
-	DefaultTokenIdLength = 12
+	DefaultSecretKey     = "g1t@o3K!e7n"
+	DefaultTokenIDLength = 12
 
 	TokenKeyInRequest = "token" // ok for: router, query, body, form, custom
 
 	DefaultLogPrefix = "[GToken]"
+
+	DefaultPrefixToken = "jwt:"
+	DefaultPrefixUser  = "user:"
+
+	PrefixBearer = "Bearer "
+
+	DefaultCodeOK           = 0
+	DefaultCodeUnauthorized = 401
 )
 
 const (
-	codeUnauthorized   = 401
-	errorUserKeyEmpty  = "userKey is empty"
 	errorReqMethod     = "request method is error! "
-	errorAuthHeader    = "Authorization : %s get token key fail"
 	errorTokenEmpty    = "token is empty"
 	errorTokenEncrypt  = "token encrypt error"
 	errorTokenDecode   = "token decode error"
@@ -31,9 +36,11 @@ const (
 	errorGetCache      = "get cache error"
 	errorDeleteCache   = "delete cache error"
 	errorDecodeCache   = "decode cache error"
-	errorEncodeCache   = "encode cache error"
+	errorEncodeJson    = "encode json error"
+	errorUseCache      = "cache error"
 	errorInvalidMode   = "invalid mode"
 	errorWriteFile     = "write file error"
 	errorTokenNotFound = "token not found"
 	errorUnauthorized  = "unauthorized"
+	errorUseRedis      = "use redis error"
 )
