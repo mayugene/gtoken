@@ -209,8 +209,6 @@ func (m *GToken) removeTokenCache(ctx context.Context, token string) (ok bool, e
 		2. remove token
 		3. remove tokenId from userKey
 	*/
-	a, _ := gcache.Data(ctx)
-	fmt.Println(a)
 	tokenInfo, err := m.getTokenCache(ctx, token)
 	if err != nil {
 		return false, err

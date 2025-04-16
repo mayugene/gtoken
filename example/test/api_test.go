@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
@@ -18,7 +17,6 @@ import (
 var server *ghttp.Server
 
 func setup() {
-	fmt.Println("start...")
 	ctx := context.Background()
 	g.Log().Info(ctx, "########service start...")
 
@@ -44,7 +42,6 @@ func teardown() {
 	if err != nil {
 		return
 	}
-	fmt.Println("stop.")
 }
 
 func TestMain(m *testing.M) {
