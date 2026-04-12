@@ -2,11 +2,12 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"errors"
+
 	"github.com/gogf/gf/v2/crypto/gmd5"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/mayugene/gtoken/example/api/auth"
 	"github.com/mayugene/gtoken/example/internal/cmd"
-	"github.com/mayugene/gtoken/example/internal/model"
 	"github.com/mayugene/gtoken/example/internal/service"
 	"github.com/mayugene/gtoken/gtoken"
 )
@@ -17,14 +18,14 @@ func init() {
 	service.RegisterAuth(&sAuth{})
 }
 
-func (s *sAuth) Login(ctx context.Context, req model.AuthLoginInput) (res *model.AuthLoginOutput, err error) {
+func (s *sAuth) Login(ctx context.Context, req auth.LoginInput) (res *auth.LoginOutput, err error) {
 	if req.Username != "admin" {
-		return nil, fmt.Errorf("user not found")
+		return nil, errors.New("user not found")
 	}
 
 	// simply encrypt password using md5
 	if gmd5.MustEncrypt(req.Password) != gmd5.MustEncrypt("123456") {
-		return nil, fmt.Errorf("wrong password")
+		return nil, errors.New("wrong password")
 	}
 
 	userId := ""
@@ -37,7 +38,7 @@ func (s *sAuth) Login(ctx context.Context, req model.AuthLoginInput) (res *model
 		return nil, err
 	}
 
-	return &model.AuthLoginOutput{
+	return &auth.LoginOutput{
 		TokenType: "Bearer",
 		Token:     newToken,
 		ExpireIn:  int64(cmd.UseGToken().ExpireIn.Seconds()),

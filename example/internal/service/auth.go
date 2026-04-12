@@ -8,12 +8,12 @@ package service
 import (
 	"context"
 
-	"github.com/mayugene/gtoken/example/internal/model"
+	"github.com/mayugene/gtoken/example/api/auth"
 )
 
 type (
 	IAuth interface {
-		Login(ctx context.Context, req model.AuthLoginInput) (res *model.AuthLoginOutput, err error)
+		Login(ctx context.Context, req auth.LoginInput) (res *auth.LoginOutput, err error)
 		Logout(ctx context.Context) (bool, error)
 	}
 )

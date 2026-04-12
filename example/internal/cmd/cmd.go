@@ -2,6 +2,11 @@ package cmd
 
 import (
 	"context"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -9,15 +14,11 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 	"github.com/mayugene/gtoken/example/internal/controller"
 	"github.com/mayugene/gtoken/gtoken"
-	"net/http"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
-	gToken *gtoken.GToken
-	once   sync.Once
+	gtokenInstance *gtoken.GToken
+	once           sync.Once
 )
 
 func UseGToken() *gtoken.GToken {
@@ -30,7 +31,7 @@ func UseGToken() *gtoken.GToken {
 		autoRefreshToken, _ := g.Cfg().Get(ctx, "auth.autoRefreshToken")
 		expireIn, _ := g.Cfg().Get(ctx, "auth.expireIn")
 
-		gToken = &gtoken.GToken{
+		gtokenInstance = &gtoken.GToken{
 			CacheMode:        cacheMode.Uint8(),
 			PublicPaths:      strings.Split(publicPaths.String(), ","),
 			SingleSession:    singleSession.Bool(),
@@ -38,12 +39,12 @@ func UseGToken() *gtoken.GToken {
 			ExpireIn:         time.Duration(expireIn.Int64()) * time.Second,
 		}
 	})
-	return gToken
+	return gtokenInstance
 }
 
 func SetGToken(ctx context.Context, gt *gtoken.GToken) {
-	gToken = gt
-	gToken.Init(ctx)
+	gtokenInstance = gt
+	gtokenInstance.Init(ctx)
 }
 
 var (
@@ -61,7 +62,7 @@ var (
 )
 
 func SystemInit(s *ghttp.Server, ctx context.Context) {
-	gToken = UseGToken()
+	UseGToken()
 
 	// non-auth apis
 	s.Group("/", func(group *ghttp.RouterGroup) {
@@ -79,7 +80,7 @@ func SystemInit(s *ghttp.Server, ctx context.Context) {
 		group.Middleware(MiddlewareCORS)
 		group.Middleware(MiddlewareHandlerResponse)
 
-		err := gToken.UseMiddleware(ctx, group)
+		err := gtokenInstance.UseMiddleware(ctx, group)
 		if err != nil {
 			panic(err)
 		}

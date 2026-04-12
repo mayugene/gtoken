@@ -3,13 +3,14 @@ package test
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"testing"
+
 	"github.com/gogf/gf/v2/encoding/gjson"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/util/gconv"
-	"github.com/mayugene/gtoken/example/internal/model"
+	"github.com/mayugene/gtoken/example/api/auth"
 	"github.com/mayugene/gtoken/gtoken"
-	"net/http"
-	"testing"
 )
 
 const (
@@ -69,7 +70,7 @@ func GetToken(t *testing.T) (newToken string, err error) {
 	if res.Code != gtoken.DefaultCodeOK {
 		return "", fmt.Errorf("login res code is not 0, %v", res)
 	}
-	var loginRes model.AuthLoginOutput
+	var loginRes auth.LoginOutput
 	err = gconv.Struct(res.Data, &loginRes)
 	if err != nil {
 		return "", err

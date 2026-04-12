@@ -1,19 +1,18 @@
-package api
+package auth
 
 import (
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/mayugene/gtoken/example/internal/model"
 )
 
 type EmptyRes struct{}
 
-type AuthLoginReq struct {
+type LoginReq struct {
 	g.Meta `path:"/login" method:"post" tags:"auth" summary:"login"`
-	model.AuthLoginInput
+	LoginInput
 }
 
-type AuthLoginRes model.AuthLoginOutput
+type LoginRes = LoginOutput
 
-type AuthLogoutReq struct {
+type LogoutReq struct {
 	g.Meta `path:"/logout" method:"post" tags:"auth" summary:"logout"`
 }
