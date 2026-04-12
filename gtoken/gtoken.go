@@ -2,13 +2,15 @@ package gtoken
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gtime"
-	"net/http"
-	"time"
 )
 
 type GToken struct {
@@ -42,7 +44,7 @@ func (m *GToken) NewToken(ctx context.Context, userID string, extraData g.Map) (
 	// if SingleSession is false, a user can create tokens without limitation.
 	// else, only one token could be kept. (The new token will replace the old one)
 	if userID == "" {
-		return "", nil, fmt.Errorf("a valid userId is required")
+		return "", nil, errors.New("a valid userId is required")
 	}
 
 	if m.SingleSession {
@@ -52,7 +54,7 @@ func (m *GToken) NewToken(ctx context.Context, userID string, extraData g.Map) (
 			return "", nil, err1
 		}
 		if !ok {
-			return "", nil, fmt.Errorf(gcode.CodeInternalError.Message())
+			return "", nil, errors.New(gcode.CodeInternalError.Message())
 		}
 	}
 
@@ -159,7 +161,7 @@ func (m *GToken) Init(ctx context.Context) bool {
 
 func (m *GToken) UseMiddleware(ctx context.Context, group *ghttp.RouterGroup) error {
 	if !m.Init(ctx) {
-		return fmt.Errorf("InitConfig fail")
+		return errors.New("InitConfig fail")
 	}
 	group.Middleware(m.authMiddleware)
 	return nil
@@ -199,7 +201,7 @@ func (m *GToken) encrypt() (token string, id string, err error) {
 	id = getNanoID(m.TokenIDLength)
 	token, err = encryptJWT(m.SecretKey, id)
 	if err != nil {
-		return "", "", fmt.Errorf(errorTokenEncrypt)
+		return "", "", errors.New(errorTokenEncrypt)
 	}
 	return token, id, nil
 }

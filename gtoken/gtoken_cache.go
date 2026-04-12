@@ -2,7 +2,10 @@ package gtoken
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/gogf/gf/v2/container/gset"
 	"github.com/gogf/gf/v2/container/gvar"
 	"github.com/gogf/gf/v2/database/gredis"
@@ -12,7 +15,6 @@ import (
 	"github.com/gogf/gf/v2/os/gfile"
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/gconv"
-	"strings"
 )
 
 func (m *GToken) setTokenCache(ctx context.Context, token string, tokenInfo *TokenInfo) (ok bool, err error) {
@@ -120,7 +122,7 @@ func (m *GToken) setTokenCache(ctx context.Context, token string, tokenInfo *Tok
 			return false, err
 		}
 	default:
-		return false, fmt.Errorf(errorInvalidMode)
+		return false, errors.New(errorInvalidMode)
 	}
 
 	return true, nil
@@ -137,14 +139,14 @@ func (m *GToken) getTokenCache(ctx context.Context, token string) (tokenInfo *To
 	case CacheModeRedis:
 		cacheValue, err = g.Redis().Get(ctx, tokenKey)
 	default:
-		return nil, fmt.Errorf(errorInvalidMode)
+		return nil, errors.New(errorInvalidMode)
 	}
 	if err != nil {
 		WriteLog(ctx, fmt.Sprintf("%s: %v", errorGetCache, err), LogLevelError)
 		return nil, err
 	}
 	if cacheValue.IsNil() {
-		return nil, fmt.Errorf(errorTokenNotFound)
+		return nil, errors.New(errorTokenNotFound)
 	}
 	tokenInfo = &TokenInfo{} // make sure to assign memory or tokenInfo is nil
 	err = cacheValue.Scan(tokenInfo)
@@ -197,7 +199,7 @@ func (m *GToken) refreshTokenCache(ctx context.Context, token string, tokenInfo 
 			return false, err
 		}
 	default:
-		return false, fmt.Errorf(errorInvalidMode)
+		return false, errors.New(errorInvalidMode)
 	}
 
 	return true, nil
@@ -264,7 +266,7 @@ func (m *GToken) removeTokenCache(ctx context.Context, token string) (ok bool, e
 			return false, err
 		}
 	default:
-		return false, fmt.Errorf(errorInvalidMode)
+		return false, errors.New(errorInvalidMode)
 	}
 
 	return true, nil
@@ -334,7 +336,7 @@ func (m *GToken) removeUserCache(ctx context.Context, userId string) (ok bool, e
 		}
 
 	default:
-		return false, fmt.Errorf(errorInvalidMode)
+		return false, errors.New(errorInvalidMode)
 	}
 
 	return true, nil

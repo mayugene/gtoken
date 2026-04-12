@@ -1,13 +1,14 @@
 package gtoken
 
 import (
-	"fmt"
+	"errors"
+	"strings"
+
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/text/gstr"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/matoous/go-nanoid/v2"
-	"strings"
 )
 
 func CheckAuthRequired(publicPaths []string, urlPath string, urlMethod string) bool {
@@ -75,7 +76,7 @@ func encryptJWT(secretKey []byte, id string) (token string, err error) {
 	)
 	token, err = jwtToken.SignedString(secretKey)
 	if err != nil {
-		return "", fmt.Errorf(errorTokenEncrypt)
+		return "", errors.New(errorTokenEncrypt)
 	}
 	return token, nil
 }
@@ -83,7 +84,7 @@ func encryptJWT(secretKey []byte, id string) (token string, err error) {
 // decryptJWT returns the tokenID in jwt claims
 func decryptJWT(secretKey []byte, token string) (tokenID string, err error) {
 	if token == "" {
-		return "", fmt.Errorf(errorTokenEmpty)
+		return "", errors.New(errorTokenEmpty)
 	}
 	parse, err := jwt.ParseWithClaims(token, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return secretKey, nil
@@ -92,7 +93,7 @@ func decryptJWT(secretKey []byte, token string) (tokenID string, err error) {
 		return
 	}
 	if !parse.Valid {
-		return "", fmt.Errorf(errorTokenDecode)
+		return "", errors.New(errorTokenDecode)
 	}
 	return parse.Claims.(*jwt.RegisteredClaims).ID, nil
 }

@@ -3,6 +3,7 @@ package gtoken
 import (
 	"context"
 	"fmt"
+
 	"github.com/gogf/gf/v2/frame/g"
 )
 
@@ -13,9 +14,9 @@ const (
 	LogLevelError   = "error"
 )
 
-func WriteLog(ctx context.Context, msg string, loglevel string) {
+func WriteLog(ctx context.Context, msg string, logLevel string) {
 	text := fmt.Sprintf("%s%s", DefaultLogPrefix, msg)
-	switch loglevel {
+	switch logLevel {
 	case LogLevelDebug:
 		g.Log().Debug(ctx, text)
 	case LogLevelInfo:
