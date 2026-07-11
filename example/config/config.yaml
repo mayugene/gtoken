@@ -4,6 +4,10 @@ server:
 auth:
   cacheMode: 0  # 0 gcache 1 gredis 2 file
   singleSession: false
+  autoRefreshToken: false
+  expireIn: 86400
+  refreshExpireIn: 86400
+  refreshLimit: 1
   publicPaths: "post:/user/public,/hello"
 
 redis:

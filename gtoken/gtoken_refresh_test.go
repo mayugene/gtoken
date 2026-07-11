@@ -343,6 +343,49 @@ func TestFileTokenPairFailsClosedWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestLegacyTokenDoesNotSlideWhenAutoRefreshDisabled(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	clock := &testClock{now: start}
+	m := &GToken{ExpireIn: time.Hour, AutoRefreshToken: false, Clock: clock.Now}
+	token, info, err := m.NewToken(ctx, "legacy-user", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantExpiry := start.Add(time.Hour)
+	clock.Advance(45 * time.Minute)
+	validated, err := m.ValidateToken(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validated.ExpireAt.Time.Equal(wantExpiry) || !info.ExpireAt.Time.Equal(wantExpiry) {
+		t.Fatalf("disabled auto refresh changed expiry to %s", validated.ExpireAt)
+	}
+	clock.Advance(15 * time.Minute)
+	if _, err = m.ValidateToken(ctx, token); err == nil {
+		t.Fatal("legacy token remains valid at expiry")
+	}
+}
+
+func TestLegacyAutoRefreshRemainsCompatible(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	clock := &testClock{now: start}
+	m := &GToken{ExpireIn: time.Hour, AutoRefreshToken: true, Clock: clock.Now}
+	token, _, err := m.NewToken(ctx, "legacy-user", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(31 * time.Minute)
+	validated, err := m.ValidateToken(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := clock.Now().Add(time.Hour); !validated.ExpireAt.Time.Equal(want) {
+		t.Fatalf("auto refresh expiry = %s, want %s", validated.ExpireAt, want)
+	}
+}
+
 func clearGlobalCache(t *testing.T, ctx context.Context) {
 	t.Helper()
 	data, err := gcache.Data(ctx)

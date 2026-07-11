@@ -18,16 +18,16 @@ type GToken struct {
 	CacheMode        uint8                                       // 0 cache (default) 1 redis 2 file
 	ExpireIn         time.Duration                               // how long a token will be invalid
 	SingleSession    bool                                        // if true, only one token can be kept, so the old one will be deleted
-	AutoRefreshToken bool                                        // whether refresh a token automatically. It is a big risk to use "true" in production
+	AutoRefreshToken bool                                        // whether to extend legacy token expiry automatically. Deprecated: use explicit token-pair renewal in production
 	SecretKey        []byte                                      // jwt secret key, why use []byte: https://golang-jwt.github.io/jwt/usage/signing_methods/#frequently-asked-questions
 	TokenIDLength    uint8                                       // length of NanoID, default 12
 	PublicPaths      []string                                    // non-auth paths. Support restful formats like "POST:/login"
 	DoBeforeAuth     func(r *ghttp.Request) (ok bool)            // generally, we omit the file requests in this func
 	DoAfterAuth      func(r *ghttp.Request, ok bool, data g.Map) // generally, we add info into context in this func
-	RefreshExpireIn  time.Duration
-	RefreshLimit     uint8
-	Clock            func() time.Time
-	CacheFilePath    string
+	RefreshExpireIn  time.Duration                               // absolute lifetime of the one-time refresh credential
+	RefreshLimit     uint8                                       // number of explicit renewals; the token-pair API currently requires 1
+	Clock            func() time.Time                            // optional UTC clock for deterministic tests
+	CacheFilePath    string                                      // optional persistence path for CacheModeFile
 	refreshMu        sync.Mutex
 }
 

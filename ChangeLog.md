@@ -1,5 +1,13 @@
 Change Log
 ------------------------------
+## Unreleased v1.2.0
+1. Add `NewTokenPair`, `RefreshTokenPair`, and `RevokeTokenFamily` for explicit one-time renewal.
+2. Add replay-aware token families with absolute access/refresh expiry and successor revocation.
+3. Add deterministic clock injection and Memory, File-restart, concurrency, and Redis Lua/CAS tests.
+4. Preserve `NewToken`, `ValidateToken`, `RemoveToken`, and explicit legacy automatic-refresh behavior.
+5. Mark `AutoRefreshToken` as deprecated for production use.
+6. Require explicit opt-in for tests against an external Redis instance; the default Redis lifecycle suite uses isolated in-process miniredis.
+
 ## 2025-04-12 v1.0.0
 A big refactor of github.com/goflyfox/gtoken. Almost rewrite it. Here are the changes:
 1. In order to make login and logout api recognized by the OpenAPI module of GoFrame, I remove the login and logout func in original gtoken.

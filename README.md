@@ -1,55 +1,83 @@
-This repo is based on the great work of https://github.com/goflyfox/gtoken. It offers a simple way for golang beginners to use [GoFrame](https://github.com/gogf/gf).
+# gtoken
 
-## Features
-1. Use jwt.
-2. Support cache/redis/file to store tokens.
-3. Support refresh jwt automatically.
-4. Support GoFrame v2.*. Currently, it's 2.9.0.
-5. Work as a group routing middleware(best practise of GoFrame).
-6. NanoID is used to reduce token bytes.
+`gtoken` provides server-side bearer-token lifecycle management for GoFrame v2 applications. It supports Memory, Redis, and File cache modes, optional single-session behavior, explicit one-time renewal, and group-routing middleware.
 
-## Documents
-1. Cache mode
-    - Cache: 0
-    - Redis: 1
-    - File: 2
-2. Choose to refresh token automatically by setting AutoRefreshToken true
-3. Handle public paths(non-auth parts)
-   - Public paths can be defined simply as []string{"/validation-code", "/activation"}
-   - Restful formats like "POST:/activation" are also supported.
-   - It's OK to add "/login" in PublicPaths or use a seperated group to bind the controller contains "/login". 
-4. Initialize
-   - UseMiddleware will automatically apply Init()
-   - Init() is exposed basically for testing purpose
-5. Add extra info
-   - The default DoAfterAuth func can set the given g.Map into context.
-   - If a self-defined DoAfterAuth is given, use the following code.
-   ```
-   for k, v := range data {
-        r.SetCtxVar(k, v)
-    }
-   ```
-6. Response format
-   - gtoken is designed to avoid writing response directly.
-   - A custom response can be applied by defining a new DoAfterAuth.
-7. Token length
-   - NanoID is used so that the token id length can be customized
-   - Please refer to: https://zelark.github.io/nano-id-cc/ for more information about NanoID collision.
-8. Refer to gtoken.GToken to get more parameter details
+## Recommended lifecycle
 
-## Usage
+For production applications, keep automatic sliding refresh disabled and use the explicit token-pair API:
+
+```go
+gt := &gtoken.GToken{
+	CacheMode:        gtoken.CacheModeRedis,
+	ExpireIn:         24 * time.Hour,
+	RefreshExpireIn:  24 * time.Hour,
+	RefreshLimit:     1,
+	AutoRefreshToken: false,
+}
+
+pair, err := gt.NewTokenPair(ctx, userID, g.Map{"tenantID": tenantID})
+if err != nil {
+	return err
+}
 ```
-   gToken := &gtoken.GToken{
-      PublicPaths:      []string{"POST:/login", "/logout"},
-      ExpireIn:         1 * time.Hour,
-   }
-   s.Group("/", func(group *ghttp.RouterGroup) {
-      err := gToken.UseMiddleware(ctx, group)
-      if err != nil {
-        panic(err)
-      }
-      group.GET("/user", func(r *ghttp.Request) {
-        r.Response.WriteJson(gtoken.DefaultResponse{Msg: "get user success"})
-      })
-   })
+
+`pair.RefreshToken` is returned only on initial issue. It can be consumed once:
+
+```go
+renewed, err := gt.RefreshTokenPair(
+	ctx,
+	refreshToken,
+	g.Map{"tenantID": tenantID},
+)
 ```
+
+The renewed pair contains a final access token and no refresh token. Reusing the original refresh token marks the family revoked and invalidates the successor access token.
+
+Map `ErrRefreshTokenRejected`, `ErrRefreshTokenExpired`, and `ErrRefreshTokenReplay` to one generic public response. Detailed errors are for internal control flow and token-free security logging only.
+
+Logout or administrative session termination uses:
+
+```go
+err := gt.RevokeTokenFamily(ctx, accessToken, refreshToken)
+```
+
+Either credential may identify the family. Invalid credentials are handled idempotently.
+
+## Security rules
+
+- Never log access tokens, refresh tokens, digests, or token-bearing URLs.
+- Send bearer tokens only in the `Authorization` header.
+- Bind refresh to stable expected extra data such as tenant or client identity.
+- Use a frontend-wide single-flight refresh request; concurrent reuse is treated as replay.
+- `AutoRefreshToken` is retained for compatibility but is deprecated for production because it creates an unlimited sliding session.
+- File mode is for one process. Use Redis mode for atomic renewal across multiple application instances.
+- Browser storage policy belongs to the application. Browser public clients that expose refresh tokens to JavaScript should follow OAuth refresh-token rotation guidance and use short absolute lifetimes.
+
+## Cache modes
+
+| Mode | Value | Intended use |
+|---|---:|---|
+| Memory | `0` | One process; tokens disappear on restart |
+| Redis | `1` | Multi-instance production; Lua/CAS renewal |
+| File | `2` | One process with restart persistence |
+
+File mode restores unexpired access tokens, token families, access indexes, and consumed/revoked tombstones. It fails token issuance when persistence fails.
+
+## Legacy API compatibility
+
+`NewToken`, `ValidateToken`, and `RemoveToken` remain available. Existing callers that explicitly set `AutoRefreshToken: true` retain the previous sliding behavior. New production integrations should use the explicit pair API instead.
+
+## Middleware
+
+```go
+server.Group("/", func(group *ghttp.RouterGroup) {
+	if err := gt.UseMiddleware(ctx, group); err != nil {
+		panic(err)
+	}
+	group.GET("/user", handler)
+})
+```
+
+Public paths support exact and REST-style entries such as `POST:/login` and `/public/*`. A custom `DoAfterAuth` can map token data into the GoFrame request context and format unauthorized responses.
+
+See `example/` for explicit login, one-time refresh, logout, and middleware usage.

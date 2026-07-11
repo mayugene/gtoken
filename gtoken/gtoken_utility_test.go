@@ -3,10 +3,12 @@ package gtoken
 import (
 	"context"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/gogf/gf/v2/container/gset"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
-	"testing"
 )
 
 func TestCheckAuthRequired(t *testing.T) {
@@ -108,9 +110,8 @@ func TestParseRequestToken(t *testing.T) {
 	testTokenInParams := fmt.Sprintf("/test2?token=%s", jwtToken)
 	testTokenInBody := "/test3"
 
-	s := g.Server()
-	s.SetPort(8081)
-	hostURL := "http://127.0.0.1:8081"
+	s := g.Server(fmt.Sprintf("parse-request-token-%d", time.Now().UnixNano()))
+	s.SetPort(0)
 	s.BindHandler(testTokenInHeaderUrl, func(r *ghttp.Request) {
 		parsedToken := ParseRequestToken(r)
 		if parsedToken != jwtToken {
@@ -136,6 +137,7 @@ func TestParseRequestToken(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	hostURL := fmt.Sprintf("http://127.0.0.1:%d", s.GetListenedPort())
 
 	ctx := context.TODO()
 	clientWithHeader := g.Client()

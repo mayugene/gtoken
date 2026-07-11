@@ -2,16 +2,20 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gcfg"
+	"github.com/gogf/gf/v2/util/gconv"
+	"github.com/mayugene/gtoken/example/api/auth"
 	"github.com/mayugene/gtoken/example/internal/cmd"
 	_ "github.com/mayugene/gtoken/example/internal/logic"
 	"github.com/mayugene/gtoken/gtoken"
-	"os"
-	"testing"
-	"time"
 )
 
 var server *ghttp.Server
@@ -29,12 +33,14 @@ func setup() {
 	}
 	server = g.Server()
 	cmd.SystemInit(server, ctx)
+	server.SetPort(0)
 
 	g.Log().Info(ctx, "########service down.")
 	err := server.Start()
 	if err != nil {
 		panic(err)
 	}
+	setBaseURL(fmt.Sprintf("http://127.0.0.1:%d", server.GetListenedPort()))
 }
 
 func teardown() {
@@ -214,12 +220,10 @@ func executeTestSession(t *testing.T, singleSession bool) {
 	if err != nil || token1 == "" {
 		t.Error("get token error:", err)
 	}
-	t.Log("token1:" + token1)
 	token2, err := GetToken(t)
 	if err != nil || token2 == "" {
 		t.Error("get token error:", err)
 	}
-	t.Log("token2:" + token2)
 
 	if singleSession {
 		// under single session, old token (token1) will be removed
@@ -245,68 +249,49 @@ func executeTestSession(t *testing.T, singleSession bool) {
 }
 
 func TestTokenRefresh(t *testing.T) {
-	t.Run("NoAutoRefresh", func(t *testing.T) {
-		t.Log("autoRefresh=false, login and get first token")
-		ctx := context.TODO()
-		gt := cmd.UseGToken()
-		gt.AutoRefreshToken = false
-		gt.ExpireIn = 2 * time.Second
-		cmd.SetGToken(ctx, gt)
-		token1, err := GetToken(t)
-		if err != nil || token1 == "" {
-			t.Error("get token error:", err)
-		}
-		t.Log("start to wait 3 seconds")
-		time.Sleep(3 * time.Second)
-		t.Log("login again to check if the token has changed")
-		token2, err := GetToken(t)
-		if err != nil || token2 == "" {
-			t.Error("get token error:", err)
-		}
-		if token1 == token2 {
-			t.Error("token1 and token2 are the same: ", token1)
-		} else {
-			t.Log("it is ok that token1 expires and thus token2 != token1")
-		}
-	})
-	t.Run("AutoRefresh", func(t *testing.T) {
-		t.Log("autoRefresh=true, login and get token")
-		gt := cmd.UseGToken()
-		gt.AutoRefreshToken = true
-		gt.ExpireIn = 2 * time.Second
-		cmd.SetGToken(context.TODO(), gt)
-		token, err := GetToken(t)
-		if err != nil || token == "" {
-			t.Error("get token error:", err)
-		}
-		for range 3 {
-			// use get user to test if token is still valid
-			t.Log("wait 1 second and try to get user")
-			time.Sleep(1 * time.Second)
-			res, err1 := Get(t, token, ApiUser)
-			if err1 != nil {
-				t.Error("error: ", err1)
-			}
-			if res.Code == 0 {
-				t.Log("token is still valid")
-			} else if res.Code == gtoken.DefaultCodeUnauthorized {
-				t.Error("token is invalid")
-			} else {
-				t.Error("error:", res)
-			}
-		}
-		t.Log("wait 3 second and try to get user")
-		time.Sleep(3 * time.Second)
-		res, err := Get(t, token, ApiUser)
-		if err != nil {
-			t.Error("error:", err)
-		}
-		if res.Code == gtoken.DefaultCodeUnauthorized {
-			t.Log("It's right to report 401 here. Because if we don't continuously use the token, it should expire automatically")
-		} else if res.Code == 0 {
-			t.Error("token should not be valid in this scenario")
-		} else {
-			t.Error("error:", res)
-		}
-	})
+	gt := cmd.UseGToken()
+	gt.AutoRefreshToken = false
+	gt.ExpireIn = 24 * time.Hour
+	gt.RefreshExpireIn = 24 * time.Hour
+	gt.RefreshLimit = 1
+	cmd.SetGToken(context.TODO(), gt)
+
+	login, err := GetTokenPair(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := Post(t, "", ApiRefresh, g.Map{"refreshToken": login.RefreshToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != gtoken.DefaultCodeOK {
+		t.Fatalf("refresh failed: %v", res)
+	}
+	var renewed auth.RefreshOutput
+	if err = gconv.Struct(res.Data, &renewed); err != nil {
+		t.Fatal(err)
+	}
+	if renewed.Token == "" || renewed.Refreshable {
+		t.Fatal("refresh response contract is invalid")
+	}
+	if oldAccess, getErr := Get(t, login.Token, ApiUser); getErr != nil || oldAccess.Code != gtoken.DefaultCodeUnauthorized {
+		t.Fatalf("initial access remains valid: %v, %v", oldAccess, getErr)
+	}
+	if finalAccess, getErr := Get(t, renewed.Token, ApiUser); getErr != nil || finalAccess.Code != gtoken.DefaultCodeOK {
+		t.Fatalf("renewed access is invalid: %v, %v", finalAccess, getErr)
+	}
+
+	replay, err := Post(t, "", ApiRefresh, g.Map{"refreshToken": login.RefreshToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.Code == gtoken.DefaultCodeOK {
+		t.Fatal("refresh token replay unexpectedly succeeded")
+	}
+	if replay.Msg != gtoken.ErrRefreshTokenRejected.Error() {
+		t.Fatalf("public refresh error = %q", replay.Msg)
+	}
+	if finalAccess, getErr := Get(t, renewed.Token, ApiUser); getErr != nil || finalAccess.Code != gtoken.DefaultCodeUnauthorized {
+		t.Fatalf("replay did not revoke renewed access: %v, %v", finalAccess, getErr)
+	}
 }

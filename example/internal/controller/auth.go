@@ -15,7 +15,11 @@ func (c *cAuth) Login(ctx context.Context, req *auth.LoginReq) (res *auth.LoginR
 	return service.Auth().Login(ctx, req.LoginInput)
 }
 
+func (c *cAuth) Refresh(ctx context.Context, req *auth.RefreshReq) (res *auth.RefreshRes, err error) {
+	return service.Auth().Refresh(ctx, req.RefreshInput)
+}
+
 func (c *cAuth) Logout(ctx context.Context, req *auth.LogoutReq) (res *auth.EmptyRes, err error) {
-	_, err = service.Auth().Logout(ctx)
+	_, err = service.Auth().Logout(ctx, req.LogoutInput)
 	return
 }

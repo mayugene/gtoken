@@ -17,9 +17,12 @@ import (
 )
 
 var (
+	// ErrRefreshTokenRejected is the generic refresh rejection used at public boundaries.
 	ErrRefreshTokenRejected = errors.New("refresh token rejected")
-	ErrRefreshTokenExpired  = errors.New("refresh token expired")
-	ErrRefreshTokenReplay   = errors.New("refresh token replay")
+	// ErrRefreshTokenExpired identifies an expired refresh credential for internal control flow.
+	ErrRefreshTokenExpired = errors.New("refresh token expired")
+	// ErrRefreshTokenReplay identifies reuse of a consumed refresh credential.
+	ErrRefreshTokenReplay = errors.New("refresh token replay")
 )
 
 const (
@@ -28,6 +31,7 @@ const (
 	tokenFamilyStateRevoked  = "revoked"
 )
 
+// TokenPair contains an access token and, on initial issuance, a one-time refresh token.
 type TokenPair struct {
 	AccessToken      string
 	AccessTokenInfo  *TokenInfo
@@ -35,6 +39,7 @@ type TokenPair struct {
 	RefreshExpiresAt *gtime.Time
 }
 
+// TokenFamily is the persisted lifecycle record shared by an initial and renewed access token.
 type TokenFamily struct {
 	FamilyID               string      `json:"familyID"`
 	UserID                 string      `json:"userID"`
@@ -85,6 +90,7 @@ func digestRefreshSecret(secret []byte) [sha256.Size]byte {
 	return sha256.Sum256(secret)
 }
 
+// NewTokenPair issues an access token and a one-time refresh credential.
 func (m *GToken) NewTokenPair(ctx context.Context, userID string, extraData g.Map) (*TokenPair, error) {
 	if !m.Init(ctx) || m.AutoRefreshToken || m.RefreshLimit != 1 {
 		return nil, ErrRefreshTokenRejected
@@ -143,6 +149,7 @@ func (m *GToken) NewTokenPair(ctx context.Context, userID string, extraData g.Ma
 	}, nil
 }
 
+// RefreshTokenPair atomically consumes a refresh credential and issues the final access token.
 func (m *GToken) RefreshTokenPair(ctx context.Context, refreshToken string, expectedExtraData g.Map) (*TokenPair, error) {
 	if !m.Init(ctx) || m.AutoRefreshToken || m.RefreshLimit != 1 {
 		return nil, ErrRefreshTokenRejected
@@ -162,6 +169,7 @@ func (m *GToken) RefreshTokenPair(ctx context.Context, refreshToken string, expe
 	}
 }
 
+// RevokeTokenFamily invalidates a token family identified by either access or refresh credential.
 func (m *GToken) RevokeTokenFamily(ctx context.Context, accessToken string, refreshToken string) error {
 	if !m.Init(ctx) {
 		return nil

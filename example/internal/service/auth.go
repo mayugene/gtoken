@@ -1,8 +1,3 @@
-// ================================================================================
-// Code generated and maintained by GoFrame CLI tool. DO NOT EDIT.
-// You can delete these comments if you wish manually maintain this interface file.
-// ================================================================================
-
 package service
 
 import (
@@ -14,7 +9,8 @@ import (
 type (
 	IAuth interface {
 		Login(ctx context.Context, req auth.LoginInput) (res *auth.LoginOutput, err error)
-		Logout(ctx context.Context) (bool, error)
+		Refresh(ctx context.Context, req auth.RefreshInput) (res *auth.RefreshOutput, err error)
+		Logout(ctx context.Context, req auth.LogoutInput) (bool, error)
 	}
 )
 

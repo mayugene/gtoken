@@ -30,6 +30,8 @@ func UseGToken() *gtoken.GToken {
 		publicPaths, _ := g.Cfg().Get(ctx, "auth.publicPaths")
 		autoRefreshToken, _ := g.Cfg().Get(ctx, "auth.autoRefreshToken")
 		expireIn, _ := g.Cfg().Get(ctx, "auth.expireIn")
+		refreshExpireIn, _ := g.Cfg().Get(ctx, "auth.refreshExpireIn")
+		refreshLimit, _ := g.Cfg().Get(ctx, "auth.refreshLimit")
 
 		gtokenInstance = &gtoken.GToken{
 			CacheMode:        cacheMode.Uint8(),
@@ -37,6 +39,8 @@ func UseGToken() *gtoken.GToken {
 			SingleSession:    singleSession.Bool(),
 			AutoRefreshToken: autoRefreshToken.Bool(),
 			ExpireIn:         time.Duration(expireIn.Int64()) * time.Second,
+			RefreshExpireIn:  time.Duration(refreshExpireIn.Int64()) * time.Second,
+			RefreshLimit:     refreshLimit.Uint8(),
 		}
 	})
 	return gtokenInstance
