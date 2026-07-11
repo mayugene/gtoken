@@ -91,11 +91,16 @@ func (m *GToken) ValidateToken(ctx context.Context, token string) (*TokenInfo, e
 	if err != nil {
 		return nil, err
 	}
+	now := m.now()
+	if !tokenInfo.ExpireAt.Time.After(now) {
+		_, _ = m.removeTokenCache(ctx, token)
+		return nil, errors.New(errorTokenNotFound)
+	}
 
 	// handle auto refresh token
-	if m.AutoRefreshToken && gtime.Now().Sub(tokenInfo.RefreshAt) > 0 {
-		tokenInfo.ExpireAt = gtime.Now().Add(m.ExpireIn)
-		tokenInfo.RefreshAt = gtime.Now().Add(m.ExpireIn / 2)
+	if m.AutoRefreshToken && now.After(tokenInfo.RefreshAt.Time) {
+		tokenInfo.ExpireAt = gtime.New(now.Add(m.ExpireIn))
+		tokenInfo.RefreshAt = gtime.New(now.Add(m.ExpireIn / 2))
 		if ok, err1 := m.refreshTokenCache(ctx, token, tokenInfo); ok {
 			return tokenInfo, nil
 		} else {
@@ -113,7 +118,7 @@ func (m *GToken) RemoveToken(ctx context.Context, token string) (ok bool, err er
 
 func (m *GToken) Init(ctx context.Context) bool {
 	if m.CacheMode == CacheModeFile {
-		initCacheModeFile(ctx)
+		m.initCacheModeFile(ctx)
 	}
 	if m.ExpireIn == 0 {
 		m.ExpireIn = DefaultExpireIn

@@ -66,7 +66,9 @@ func (m *GToken) setTokenCache(ctx context.Context, token string, tokenInfo *Tok
 		}
 		// keep file content up-to-date
 		if m.CacheMode == CacheModeFile {
-			saveToFile(ctx)
+			if err = m.saveToFile(ctx); err != nil {
+				return false, err
+			}
 		}
 	case CacheModeRedis:
 		cacheValueJson, err1 := gjson.Encode(tokenInfo)
@@ -177,7 +179,9 @@ func (m *GToken) refreshTokenCache(ctx context.Context, token string, tokenInfo 
 		}
 		// keep file content up-to-date
 		if m.CacheMode == CacheModeFile {
-			saveToFile(ctx)
+			if err = m.saveToFile(ctx); err != nil {
+				return false, err
+			}
 		}
 	case CacheModeRedis:
 		cacheValueJson, err1 := gjson.Encode(tokenInfo)
@@ -250,7 +254,9 @@ func (m *GToken) removeTokenCache(ctx context.Context, token string) (ok bool, e
 		}
 		// keep file content up-to-date
 		if m.CacheMode == CacheModeFile {
-			saveToFile(ctx)
+			if err = m.saveToFile(ctx); err != nil {
+				return false, err
+			}
 		}
 	case CacheModeRedis:
 		// remove token
@@ -305,7 +311,9 @@ func (m *GToken) removeUserCache(ctx context.Context, userId string) (ok bool, e
 		}
 		// keep file content up-to-date
 		if m.CacheMode == CacheModeFile {
-			saveToFile(ctx)
+			if err = m.saveToFile(ctx); err != nil {
+				return false, err
+			}
 		}
 	case CacheModeRedis:
 		// get cached value
@@ -342,20 +350,30 @@ func (m *GToken) removeUserCache(ctx context.Context, userId string) (ok bool, e
 	return true, nil
 }
 
-func saveToFile(ctx context.Context) {
-	file := gfile.Temp(CacheModeFileDat)
+func (m *GToken) cacheFilePath() string {
+	if m.CacheFilePath != "" {
+		return m.CacheFilePath
+	}
+	return gfile.Temp(CacheModeFileDat)
+}
+
+func (m *GToken) saveToFile(ctx context.Context) error {
+	file := m.cacheFilePath()
 	data, err := gcache.Data(ctx)
 	if err != nil {
 		WriteLog(ctx, fmt.Sprintf("%s: %v", errorGetCache, err), LogLevelError)
+		return err
 	}
 	err = gfile.PutContents(file, gjson.New(data).MustToJsonString())
 	if err != nil {
 		WriteLog(ctx, fmt.Sprintf("%s: %v", errorWriteFile, err), LogLevelError)
+		return err
 	}
+	return nil
 }
 
-func initCacheModeFile(ctx context.Context) {
-	file := gfile.Temp(CacheModeFileDat)
+func (m *GToken) initCacheModeFile(ctx context.Context) {
+	file := m.cacheFilePath()
 	if !gfile.Exists(file) {
 		return
 	}
@@ -365,22 +383,37 @@ func initCacheModeFile(ctx context.Context) {
 		return
 	}
 	for k, v := range maps {
-		// Avoid using m.ExpireIn
-		// Since loading tokens from files, the interval should not be reset
-		if !strings.HasPrefix(k, DefaultPrefixToken) {
+		var expireAt *gtime.Time
+		switch {
+		case strings.HasPrefix(k, DefaultPrefixToken):
+			var token TokenInfo
+			if err := gconv.Struct(v, &token); err != nil {
+				continue
+			}
+			expireAt = token.ExpireAt
+		case strings.HasPrefix(k, DefaultPrefixFamily):
+			var family TokenFamily
+			if err := gconv.Struct(v, &family); err != nil {
+				continue
+			}
+			expireAt = family.FamilyExpiresAt
+		case strings.HasPrefix(k, DefaultPrefixAccess):
+			var index accessFamilyIndex
+			if err := gconv.Struct(v, &index); err != nil {
+				continue
+			}
+			expireAt = index.ExpireAt
+		default:
 			continue
 		}
-		var token TokenInfo
-		err := gconv.Struct(v, &token)
-		if err != nil {
+		if expireAt == nil {
 			continue
 		}
-		expireIn := token.ExpireAt.Sub(gtime.Now())
+		expireIn := expireAt.Time.Sub(m.now())
 		if expireIn <= 0 {
 			continue
 		}
-		err = gcache.Set(ctx, k, v, expireIn)
-		if err != nil {
+		if err := gcache.Set(ctx, k, v, expireIn); err != nil {
 			WriteLog(ctx, fmt.Sprintf("%s: %v", errorSetCache, err), LogLevelError)
 		}
 	}
