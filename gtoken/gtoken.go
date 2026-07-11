@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gogf/gf/v2/errors/gcode"
@@ -23,6 +24,11 @@ type GToken struct {
 	PublicPaths      []string                                    // non-auth paths. Support restful formats like "POST:/login"
 	DoBeforeAuth     func(r *ghttp.Request) (ok bool)            // generally, we omit the file requests in this func
 	DoAfterAuth      func(r *ghttp.Request, ok bool, data g.Map) // generally, we add info into context in this func
+	RefreshExpireIn  time.Duration
+	RefreshLimit     uint8
+	Clock            func() time.Time
+	CacheFilePath    string
+	refreshMu        sync.Mutex
 }
 
 type TokenInfo struct {
@@ -31,6 +37,7 @@ type TokenInfo struct {
 	ExtraData g.Map       `json:"extraData"`
 	ExpireAt  *gtime.Time `json:"ExpireAt"`
 	RefreshAt *gtime.Time `json:"RefreshAt"`
+	FamilyID  string      `json:"familyID,omitempty"`
 }
 
 type DefaultResponse struct {
@@ -62,12 +69,13 @@ func (m *GToken) NewToken(ctx context.Context, userID string, extraData g.Map) (
 	if err != nil {
 		return "", nil, err
 	}
+	now := m.now()
 	tokenInfo = &TokenInfo{
 		UserID:    userID,
 		TokenID:   newTokenID,
 		ExtraData: extraData,
-		ExpireAt:  gtime.Now().Add(m.ExpireIn),
-		RefreshAt: gtime.Now().Add(m.ExpireIn / 2),
+		ExpireAt:  gtime.New(now.Add(m.ExpireIn)),
+		RefreshAt: gtime.New(now.Add(m.ExpireIn / 2)),
 	}
 
 	ok, err := m.setTokenCache(ctx, newToken, tokenInfo)
@@ -109,6 +117,12 @@ func (m *GToken) Init(ctx context.Context) bool {
 	}
 	if m.ExpireIn == 0 {
 		m.ExpireIn = DefaultExpireIn
+	}
+	if m.RefreshExpireIn == 0 {
+		m.RefreshExpireIn = DefaultRefreshExpireIn
+	}
+	if m.RefreshLimit == 0 {
+		m.RefreshLimit = DefaultRefreshLimit
 	}
 
 	if len(m.SecretKey) == 0 {

@@ -10,16 +10,21 @@ const (
 	CacheModeFile    = 2
 	CacheModeFileDat = "gtoken.dat"
 
-	DefaultExpireIn      = 7 * 24 * time.Hour
-	DefaultSecretKey     = "g1t@o3K!e7n"
-	DefaultTokenIDLength = 12
+	DefaultExpireIn        = 7 * 24 * time.Hour
+	DefaultRefreshExpireIn = 24 * time.Hour
+	DefaultRefreshLimit    = uint8(1)
+	DefaultSecretKey       = "g1t@o3K!e7n"
+	DefaultTokenIDLength   = 12
 
 	TokenKeyInRequest = "token" // ok for: router, query, body, form, custom
 
 	DefaultLogPrefix = "[GToken]"
 
-	DefaultPrefixToken = "jwt:"
-	DefaultPrefixUser  = "user:"
+	DefaultPrefixToken  = "jwt:"
+	DefaultPrefixUser   = "user:"
+	DefaultPrefixFamily = "refresh-family:"
+	DefaultPrefixAccess = "refresh-access:"
+	refreshSecretBytes  = 32
 
 	PrefixBearer = "Bearer "
 
