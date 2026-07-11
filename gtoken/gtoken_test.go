@@ -2,6 +2,8 @@ package gtoken_test
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"testing"
 
 	_ "github.com/gogf/gf/contrib/nosql/redis/v2"
@@ -10,10 +12,7 @@ import (
 	"github.com/mayugene/gtoken/gtoken"
 )
 
-var (
-	userId       = "ab3cl2"
-	redisAddress = "127.0.0.1:6379"
-)
+var userId = "ab3cl2"
 
 func TestEncryptDecryptToken(t *testing.T) {
 	t.Log("test: encrypt and decrypt token")
@@ -36,18 +35,26 @@ func TestEncryptDecryptToken(t *testing.T) {
 	})
 
 	t.Run("test redis cache", func(t *testing.T) {
+		if os.Getenv("RUN_GTOKEN_REDIS_TEST") != "1" {
+			t.Skip("set RUN_GTOKEN_REDIS_TEST=1 with an isolated Redis database")
+		}
+		redisAddress := os.Getenv("GTOKEN_REDIS_TEST_ADDRESS")
+		redisDB, err := strconv.Atoi(os.Getenv("GTOKEN_REDIS_TEST_DB"))
+		if redisAddress == "" || err != nil || redisDB < 1 {
+			t.Skip("GTOKEN_REDIS_TEST_ADDRESS and a positive GTOKEN_REDIS_TEST_DB are required")
+		}
 		t.Log("use cache mode: redis")
 		// Although it is convenient to use g.Redis()
 		// But don't forget to import _ "github.com/gogf/gf/contrib/nosql/redis/v2", or it will panic
 		redisConfig := gredis.Config{
 			Address: redisAddress,
-			Db:      1,
+			Db:      redisDB,
 			Pass:    "",
 		}
 		gredis.SetConfig(&redisConfig)
 		gToken := &gtoken.GToken{CacheMode: gtoken.CacheModeRedis}
 		gToken.Init(ctx)
-		_, err := g.Redis().DBSize(ctx)
+		_, err = g.Redis().DBSize(ctx)
 		if err != nil {
 			t.Error("test redis failed: cannot connect to redis server")
 		} else {

@@ -96,6 +96,13 @@ func (m *GToken) ValidateToken(ctx context.Context, token string) (*TokenInfo, e
 		_, _ = m.removeTokenCache(ctx, token)
 		return nil, errors.New(errorTokenNotFound)
 	}
+	if tokenInfo.FamilyID != "" {
+		family, familyErr := m.getTokenFamily(ctx, tokenInfo.FamilyID)
+		if familyErr != nil || family.State == tokenFamilyStateRevoked {
+			_, _ = m.removeTokenCache(ctx, token)
+			return nil, errors.New(errorTokenNotFound)
+		}
+	}
 
 	// handle auto refresh token
 	if m.AutoRefreshToken && now.After(tokenInfo.RefreshAt.Time) {

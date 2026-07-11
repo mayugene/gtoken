@@ -45,6 +45,8 @@ type TokenFamily struct {
 	IssuedAt               *gtime.Time `json:"issuedAt"`
 	RefreshExpiresAt       *gtime.Time `json:"refreshExpiresAt"`
 	FamilyExpiresAt        *gtime.Time `json:"familyExpiresAt"`
+	RefreshExpiresAtMillis int64       `json:"refreshExpiresAtMillis"`
+	FamilyExpiresAtMillis  int64       `json:"familyExpiresAtMillis"`
 	State                  string      `json:"state"`
 }
 
@@ -109,22 +111,19 @@ func (m *GToken) NewTokenPair(ctx context.Context, userID string, extraData g.Ma
 	now := m.now()
 	refreshExpiresAt := gtime.New(now.Add(m.RefreshExpireIn))
 	family := &TokenFamily{
-		FamilyID:             familyID,
-		UserID:               userID,
-		ExtraData:            extraData,
-		RefreshDigest:        base64.RawURLEncoding.EncodeToString(digest[:]),
-		CurrentAccessTokenID: accessInfo.TokenID,
-		IssuedAt:             gtime.New(now),
-		RefreshExpiresAt:     refreshExpiresAt,
-		FamilyExpiresAt:      gtime.New(refreshExpiresAt.Time.Add(m.ExpireIn)),
-		State:                tokenFamilyStateActive,
+		FamilyID:               familyID,
+		UserID:                 userID,
+		ExtraData:              extraData,
+		RefreshDigest:          base64.RawURLEncoding.EncodeToString(digest[:]),
+		CurrentAccessTokenID:   accessInfo.TokenID,
+		IssuedAt:               gtime.New(now),
+		RefreshExpiresAt:       refreshExpiresAt,
+		FamilyExpiresAt:        gtime.New(refreshExpiresAt.Time.Add(m.ExpireIn)),
+		RefreshExpiresAtMillis: refreshExpiresAt.Time.UnixMilli(),
+		State:                  tokenFamilyStateActive,
 	}
-	if err = m.createTokenFamilyCache(ctx, family); err != nil {
-		_, _ = m.removeTokenCache(ctx, accessToken)
-		return nil, err
-	}
-	if err = m.setAccessFamilyIndexCache(ctx, accessInfo.TokenID, familyID, family.FamilyExpiresAt); err != nil {
-		m.removeTokenFamilyRecordCache(ctx, familyID)
+	family.FamilyExpiresAtMillis = family.FamilyExpiresAt.Time.UnixMilli()
+	if err = m.createTokenFamily(ctx, family, accessInfo.TokenID); err != nil {
 		_, _ = m.removeTokenCache(ctx, accessToken)
 		return nil, err
 	}
@@ -156,6 +155,8 @@ func (m *GToken) RefreshTokenPair(ctx context.Context, refreshToken string, expe
 	switch m.CacheMode {
 	case CacheModeCache, CacheModeFile:
 		return m.refreshTokenPairCache(ctx, familyID, digest, expectedExtraData)
+	case CacheModeRedis:
+		return m.refreshTokenPairRedis(ctx, familyID, digest, expectedExtraData)
 	default:
 		return nil, ErrRefreshTokenRejected
 	}
@@ -168,8 +169,39 @@ func (m *GToken) RevokeTokenFamily(ctx context.Context, accessToken string, refr
 	switch m.CacheMode {
 	case CacheModeCache, CacheModeFile:
 		return m.revokeTokenFamilyCache(ctx, accessToken, refreshToken)
+	case CacheModeRedis:
+		return m.revokeTokenFamilyRedis(ctx, accessToken, refreshToken)
 	default:
 		return ErrRefreshTokenRejected
+	}
+}
+
+func (m *GToken) createTokenFamily(ctx context.Context, family *TokenFamily, accessTokenID string) error {
+	switch m.CacheMode {
+	case CacheModeCache, CacheModeFile:
+		if err := m.createTokenFamilyCache(ctx, family); err != nil {
+			return err
+		}
+		if err := m.setAccessFamilyIndexCache(ctx, accessTokenID, family.FamilyID, family.FamilyExpiresAt); err != nil {
+			m.removeTokenFamilyRecordCache(ctx, family.FamilyID)
+			return err
+		}
+		return nil
+	case CacheModeRedis:
+		return m.createTokenFamilyRedis(ctx, family, accessTokenID)
+	default:
+		return ErrRefreshTokenRejected
+	}
+}
+
+func (m *GToken) getTokenFamily(ctx context.Context, familyID string) (*TokenFamily, error) {
+	switch m.CacheMode {
+	case CacheModeCache, CacheModeFile:
+		return m.getTokenFamilyCache(ctx, familyID)
+	case CacheModeRedis:
+		return m.getTokenFamilyRedis(ctx, familyID)
+	default:
+		return nil, ErrRefreshTokenRejected
 	}
 }
 
