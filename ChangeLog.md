@@ -1,5 +1,10 @@
 Change Log
 ------------------------------
+## 2026-10-23 v1.2.2
+1. Preserve timezone offsets and subsecond precision in token, token-pair, family, and access-index JSON timestamps.
+2. Read legacy v1.2 timezone-free timestamps as UTC and restore file-cache records through their JSON codecs.
+3. Add Redis and file-restart regression coverage for expiry, renewal, and replay across UTC, Asia/Shanghai, and America/New_York.
+
 ## Unreleased v1.2.0
 1. Add `NewTokenPair`, `RefreshTokenPair`, and `RevokeTokenFamily` for explicit one-time renewal.
 2. Add replay-aware token families with absolute access/refresh expiry and successor revocation.

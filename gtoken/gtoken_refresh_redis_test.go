@@ -7,9 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	_ "github.com/gogf/gf/contrib/nosql/redis/v2"
-	"github.com/gogf/gf/v2/database/gredis"
 	"github.com/gogf/gf/v2/frame/g"
 )
 
@@ -30,8 +28,7 @@ func TestRedisRefreshResultMapping(t *testing.T) {
 }
 
 func TestRedisTokenFamily(t *testing.T) {
-	server := miniredis.RunT(t)
-	gredis.SetConfig(&gredis.Config{Address: server.Addr(), Db: 1})
+	useTestRedis(t)
 	ctx := context.Background()
 	if _, err := g.Redis().DBSize(ctx); err != nil {
 		t.Fatalf("connect isolated Redis: %v", err)

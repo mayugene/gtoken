@@ -2,6 +2,7 @@ package gtoken
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -364,7 +365,12 @@ func (m *GToken) saveToFile(ctx context.Context) error {
 		WriteLog(ctx, fmt.Sprintf("%s: %v", errorGetCache, err), LogLevelError)
 		return err
 	}
-	err = gfile.PutContents(file, gjson.New(data).MustToJsonString())
+	encoded, err := gjson.Encode(data)
+	if err != nil {
+		WriteLog(ctx, fmt.Sprintf("%s: %v", errorEncodeJson, err), LogLevelError)
+		return err
+	}
+	err = gfile.PutContents(file, string(encoded))
 	if err != nil {
 		WriteLog(ctx, fmt.Sprintf("%s: %v", errorWriteFile, err), LogLevelError)
 		return err
@@ -383,26 +389,35 @@ func (m *GToken) initCacheModeFile(ctx context.Context) {
 		return
 	}
 	for k, v := range maps {
+		// Decode through the record's JSON codec so legacy timezone-free UTC
+		// timestamps do not get interpreted in the host's local timezone.
+		encoded, err := gjson.Encode(v)
+		if err != nil {
+			continue
+		}
 		var expireAt *gtime.Time
 		switch {
 		case strings.HasPrefix(k, DefaultPrefixToken):
 			var token TokenInfo
-			if err := gconv.Struct(v, &token); err != nil {
+			if err := json.Unmarshal(encoded, &token); err != nil {
 				continue
 			}
 			expireAt = token.ExpireAt
+			v = &token
 		case strings.HasPrefix(k, DefaultPrefixFamily):
 			var family TokenFamily
-			if err := gconv.Struct(v, &family); err != nil {
+			if err := json.Unmarshal(encoded, &family); err != nil {
 				continue
 			}
 			expireAt = family.FamilyExpiresAt
+			v = &family
 		case strings.HasPrefix(k, DefaultPrefixAccess):
 			var index accessFamilyIndex
-			if err := gconv.Struct(v, &index); err != nil {
+			if err := json.Unmarshal(encoded, &index); err != nil {
 				continue
 			}
 			expireAt = index.ExpireAt
+			v = &index
 		default:
 			continue
 		}

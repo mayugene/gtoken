@@ -73,6 +73,8 @@ Either credential may identify the family. Invalid credentials are handled idemp
 
 File mode restores unexpired access tokens, token families, access indexes, and consumed/revoked tombstones. It fails token issuance when persistence fails.
 
+Token and family JSON timestamps use RFC3339Nano, including a timezone offset and subsecond precision. Legacy v1.2 timestamps in `YYYY-MM-DD HH:MM:SS` format are read as UTC, matching the clock used to issue them. Fractional seconds already lost in legacy records cannot be recovered.
+
 ## Legacy API compatibility
 
 `NewToken`, `ValidateToken`, and `RemoveToken` remain available. Existing callers that explicitly set `AutoRefreshToken: true` retain the previous sliding behavior. New production integrations should use the explicit pair API instead.
