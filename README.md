@@ -2,6 +2,16 @@
 
 `gtoken` provides server-side bearer-token lifecycle management for GoFrame v2 applications. It supports Memory, Redis, and File cache modes, optional single-session behavior, explicit one-time renewal, and group-routing middleware.
 
+## Go version
+
+The minimum supported Go version is **1.25.0**, required by the current OpenTelemetry and `golang.org/x/sys` dependencies. The preferred development toolchain is **Go 1.27.3**, specified separately by the `toolchain` directive in `go.mod`.
+
+To verify compatibility with the minimum version without automatically selecting the preferred toolchain, run:
+
+```sh
+GOTOOLCHAIN=go1.25.0 go test ./...
+```
+
 ## Recommended lifecycle
 
 For production applications, keep automatic sliding refresh disabled and use the explicit token-pair API:

@@ -1,11 +1,13 @@
 module github.com/mayugene/gtoken
 
-go 1.26.0
+go 1.25.0
+
+toolchain go1.27.3
 
 require (
-	github.com/alicebob/miniredis/v2 v2.38.0
-	github.com/gogf/gf/contrib/nosql/redis/v2 v2.10.0
-	github.com/gogf/gf/v2 v2.10.0
+	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/gogf/gf/contrib/nosql/redis/v2 v2.10.3
+	github.com/gogf/gf/v2 v2.10.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/matoous/go-nanoid/v2 v2.1.0
 )
