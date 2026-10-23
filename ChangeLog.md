@@ -1,5 +1,11 @@
 Change Log
 ------------------------------
+## 2026-10-23 v1.2.3
+1. Preserve arbitrary JSON number precision in token extra data, nested values, and file-cache restoration using `json.Number`.
+2. Validate Redis refresh records in Go and atomically compare JSON snapshots, preventing adjacent large tenant IDs from matching while preserving one-time renewal and replay revocation.
+3. Preserve numeric data during Redis refresh, replay revocation, and explicit family revocation without Lua JSON decoding or re-encoding.
+4. Add large-integer, decimal, nested-value, cache-restart, and token-family lifecycle regressions across Memory, Redis, and File modes.
+
 ## 2026-10-23 v1.2.2
 1. Preserve timezone offsets and subsecond precision in token, token-pair, family, and access-index JSON timestamps.
 2. Read legacy v1.2 timezone-free timestamps as UTC and restore file-cache records through their JSON codecs.

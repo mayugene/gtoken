@@ -384,17 +384,14 @@ func (m *GToken) initCacheModeFile(ctx context.Context) {
 		return
 	}
 	data := gfile.GetContents(file)
-	maps := gconv.Map(data)
-	if maps == nil || len(maps) <= 0 {
+	var maps map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(data), &maps); err != nil || len(maps) == 0 {
 		return
 	}
-	for k, v := range maps {
+	for k, encoded := range maps {
+		var v any
 		// Decode through the record's JSON codec so legacy timezone-free UTC
 		// timestamps do not get interpreted in the host's local timezone.
-		encoded, err := gjson.Encode(v)
-		if err != nil {
-			continue
-		}
 		var expireAt *gtime.Time
 		switch {
 		case strings.HasPrefix(k, DefaultPrefixToken):

@@ -1,6 +1,7 @@
 package gtoken
 
 import (
+	"bytes"
 	"encoding/json"
 	"time"
 
@@ -15,7 +16,7 @@ type jsonTime struct {
 
 func (t *jsonTime) UnmarshalJSON(data []byte) error {
 	var value string
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := decodeJSONNumbers(data, &value); err != nil {
 		return err
 	}
 	if value == "" {
@@ -62,7 +63,7 @@ func (info TokenInfo) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON also accepts legacy UTC timestamps without an explicit offset.
 func (info *TokenInfo) UnmarshalJSON(data []byte) error {
 	value := tokenInfoJSON{tokenInfoAlias: (*tokenInfoAlias)(info), ExpireAt: toJSONTime(info.ExpireAt), RefreshAt: toJSONTime(info.RefreshAt)}
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := decodeJSONNumbers(data, &value); err != nil {
 		return err
 	}
 	info.ExpireAt, info.RefreshAt = fromJSONTime(value.ExpireAt), fromJSONTime(value.RefreshAt)
@@ -85,7 +86,7 @@ func (family TokenFamily) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON also accepts legacy UTC timestamps without an explicit offset.
 func (family *TokenFamily) UnmarshalJSON(data []byte) error {
 	value := tokenFamilyJSON{tokenFamilyAlias: (*tokenFamilyAlias)(family), IssuedAt: toJSONTime(family.IssuedAt), RefreshExpiresAt: toJSONTime(family.RefreshExpiresAt), FamilyExpiresAt: toJSONTime(family.FamilyExpiresAt)}
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := decodeJSONNumbers(data, &value); err != nil {
 		return err
 	}
 	family.IssuedAt = fromJSONTime(value.IssuedAt)
@@ -106,7 +107,7 @@ func (index accessFamilyIndex) MarshalJSON() ([]byte, error) {
 
 func (index *accessFamilyIndex) UnmarshalJSON(data []byte) error {
 	value := accessFamilyIndexJSON{accessFamilyIndexAlias: (*accessFamilyIndexAlias)(index), ExpireAt: toJSONTime(index.ExpireAt)}
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := decodeJSONNumbers(data, &value); err != nil {
 		return err
 	}
 	index.ExpireAt = fromJSONTime(value.ExpireAt)
@@ -127,9 +128,20 @@ func (pair TokenPair) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON also accepts legacy UTC timestamps without an explicit offset.
 func (pair *TokenPair) UnmarshalJSON(data []byte) error {
 	value := tokenPairJSON{tokenPairAlias: (*tokenPairAlias)(pair), RefreshExpiresAt: toJSONTime(pair.RefreshExpiresAt)}
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := decodeJSONNumbers(data, &value); err != nil {
 		return err
 	}
 	pair.RefreshExpiresAt = fromJSONTime(value.RefreshExpiresAt)
 	return nil
+}
+
+// decodeJSONNumbers preserves numeric lexemes in arbitrary ExtraData, including
+// nested maps and arrays. Each custom UnmarshalJSON must opt in independently.
+func decodeJSONNumbers(data []byte, value any) error {
+	if !json.Valid(data) {
+		return json.Unmarshal(data, value)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode(value)
 }

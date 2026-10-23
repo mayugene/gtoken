@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 
 	"github.com/gogf/gf/v2/encoding/gjson"
 	"github.com/gogf/gf/v2/frame/g"
@@ -15,6 +17,7 @@ const (
 	redisRefreshRejected = -1
 	redisRefreshExpired  = -2
 	redisRefreshReplay   = -3
+	redisRefreshChanged  = -4
 )
 
 const redisCreateFamilyScript = `
@@ -24,39 +27,33 @@ redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
 return 1
 `
 
+// All JSON decoding, authorization, and payload encoding happen in Go. Redis
+// compares the exact validated snapshot before applying the transition atomically.
 const redisRefreshFamilyScript = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return -1 end
-local family = cjson.decode(raw)
-if family.refreshDigest ~= ARGV[1] then return -1 end
-local expected = cjson.decode(ARGV[2])
-for key, value in pairs(expected) do
-  if family.extraData == nil or family.extraData[key] == nil or tostring(family.extraData[key]) ~= tostring(value) then return -1 end
-end
-if family.state == 'consumed' or family.state == 'revoked' then
-  family.state = 'revoked'
-  redis.call('SET', KEYS[1], cjson.encode(family), 'PX', ARGV[7])
+if raw ~= ARGV[1] then return -4 end
+local outcome = tonumber(ARGV[2])
+if outcome == -3 then
+  redis.call('SET', KEYS[1], ARGV[10], 'PX', ARGV[6])
   return -3
 end
-if family.state ~= 'active' then return -1 end
-if tonumber(family.refreshExpiresAtMillis) <= tonumber(ARGV[3]) then return -2 end
-redis.call('SET', KEYS[1], ARGV[4], 'PX', ARGV[7])
+if outcome ~= 1 then return outcome end
+redis.call('SET', KEYS[1], ARGV[3], 'PX', ARGV[6])
 redis.call('DEL', KEYS[2])
-redis.call('SET', KEYS[3], ARGV[5], 'PX', ARGV[8])
-redis.call('SET', KEYS[4], ARGV[6], 'PX', ARGV[7])
-redis.call('SREM', KEYS[5], ARGV[9])
-redis.call('SADD', KEYS[5], ARGV[10])
-redis.call('PEXPIRE', KEYS[5], ARGV[8])
+redis.call('SET', KEYS[3], ARGV[4], 'PX', ARGV[7])
+redis.call('SET', KEYS[4], ARGV[5], 'PX', ARGV[6])
+redis.call('SREM', KEYS[5], ARGV[8])
+redis.call('SADD', KEYS[5], ARGV[9])
+redis.call('PEXPIRE', KEYS[5], ARGV[7])
 return 1
 `
 
 const redisRevokeFamilyScript = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
-local family = cjson.decode(raw)
-if ARGV[1] ~= '' and family.refreshDigest ~= ARGV[1] then return 0 end
-family.state = 'revoked'
-redis.call('SET', KEYS[1], cjson.encode(family), 'PX', ARGV[2])
+if raw ~= ARGV[1] then return -4 end
+redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
 return 1
 `
 
@@ -97,15 +94,21 @@ func (m *GToken) createTokenFamilyRedis(ctx context.Context, family *TokenFamily
 }
 
 func (m *GToken) getTokenFamilyRedis(ctx context.Context, familyID string) (*TokenFamily, error) {
+	family, _, err := m.getTokenFamilySnapshotRedis(ctx, familyID)
+	return family, err
+}
+
+func (m *GToken) getTokenFamilySnapshotRedis(ctx context.Context, familyID string) (*TokenFamily, string, error) {
 	value, err := g.Redis().Get(ctx, DefaultPrefixFamily+familyID)
 	if err != nil || value.IsNil() {
-		return nil, ErrRefreshTokenRejected
+		return nil, "", ErrRefreshTokenRejected
 	}
+	raw := value.String()
 	family := &TokenFamily{}
-	if err = value.Scan(family); err != nil {
-		return nil, ErrRefreshTokenRejected
+	if err = json.Unmarshal([]byte(raw), family); err != nil {
+		return nil, "", ErrRefreshTokenRejected
 	}
-	return family, nil
+	return family, raw, nil
 }
 
 func (m *GToken) getAccessFamilyIndexRedis(ctx context.Context, tokenID string) (string, error) {
@@ -120,12 +123,36 @@ func (m *GToken) getAccessFamilyIndexRedis(ctx context.Context, tokenID string) 
 	return index.FamilyID, nil
 }
 
+var errRedisFamilyChanged = errors.New("token family changed during atomic update")
+
 func (m *GToken) refreshTokenPairRedis(ctx context.Context, familyID string, digest [sha256.Size]byte, expectedExtraData g.Map) (*TokenPair, error) {
-	family, err := m.getTokenFamilyRedis(ctx, familyID)
-	if err != nil {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pair, err := m.refreshTokenPairSnapshotRedis(ctx, familyID, digest, expectedExtraData)
+		if !errors.Is(err, errRedisFamilyChanged) {
+			return pair, err
+		}
+	}
+}
+
+func (m *GToken) refreshTokenPairSnapshotRedis(ctx context.Context, familyID string, digest [sha256.Size]byte, expectedExtraData g.Map) (*TokenPair, error) {
+	family, raw, err := m.getTokenFamilySnapshotRedis(ctx, familyID)
+	if err != nil || !refreshDigestMatches(family.RefreshDigest, digest) || !expectedExtraDataMatches(family.ExtraData, expectedExtraData) {
 		return nil, ErrRefreshTokenRejected
 	}
 	now := m.now()
+	outcome := redisRefreshRejected
+	switch family.State {
+	case tokenFamilyStateConsumed, tokenFamilyStateRevoked:
+		outcome = redisRefreshReplay
+	case tokenFamilyStateActive:
+		outcome = redisRefreshSuccess
+		if family.RefreshExpiresAtMillis <= now.UnixMilli() {
+			outcome = redisRefreshExpired
+		}
+	}
 	successorToken, successorID, err := m.encrypt()
 	if err != nil {
 		return nil, err
@@ -149,11 +176,9 @@ func (m *GToken) refreshTokenPairRedis(ctx context.Context, familyID string, dig
 	if err != nil {
 		return nil, err
 	}
-	expected := expectedExtraData
-	if expected == nil {
-		expected = g.Map{}
-	}
-	expectedJSON, err := gjson.Encode(expected)
+	revoked := *family
+	revoked.State = tokenFamilyStateRevoked
+	revokedJSON, err := gjson.Encode(&revoked)
 	if err != nil {
 		return nil, err
 	}
@@ -172,15 +197,18 @@ func (m *GToken) refreshTokenPairRedis(ctx context.Context, familyID string, dig
 			DefaultPrefixUser + family.UserID,
 		},
 		[]any{
-			base64.RawURLEncoding.EncodeToString(digest[:]), expectedJSON, now.UnixMilli(),
+			raw, outcome,
 			consumedJSON, successorJSON, indexJSON, familyTTL, accessTTL,
-			family.CurrentAccessTokenID, successorID,
+			family.CurrentAccessTokenID, successorID, revokedJSON,
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
 	code := result.Int()
+	if code == redisRefreshChanged {
+		return nil, errRedisFamilyChanged
+	}
 	if code == redisRefreshReplay {
 		if replayed, replayErr := m.getTokenFamilyRedis(ctx, familyID); replayErr == nil {
 			_ = m.removeAccessTokenRedisByID(ctx, replayed.UserID, replayed.SuccessorAccessTokenID)
@@ -210,22 +238,39 @@ func (m *GToken) revokeTokenFamilyRedis(ctx context.Context, accessToken string,
 		}
 	}
 	for familyID, digest := range familyDigests {
-		family, err := m.getTokenFamilyRedis(ctx, familyID)
-		if err != nil {
-			continue
-		}
-		ttl := family.FamilyExpiresAt.Time.Sub(m.now()).Milliseconds()
-		if ttl <= 0 {
-			continue
-		}
-		result, evalErr := g.Redis().Eval(ctx, redisRevokeFamilyScript, 1,
-			[]string{DefaultPrefixFamily + familyID}, []any{digest, ttl})
-		if evalErr != nil {
-			return evalErr
-		}
-		if result.Int() == 1 {
-			_ = m.removeAccessTokenRedisByID(ctx, family.UserID, family.CurrentAccessTokenID)
-			_ = m.removeAccessTokenRedisByID(ctx, family.UserID, family.SuccessorAccessTokenID)
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			family, raw, err := m.getTokenFamilySnapshotRedis(ctx, familyID)
+			if err != nil {
+				break
+			}
+			if digest != "" && family.RefreshDigest != digest {
+				break
+			}
+			family.State = tokenFamilyStateRevoked
+			revokedJSON, err := gjson.Encode(family)
+			if err != nil {
+				return err
+			}
+			ttl := family.FamilyExpiresAt.Time.Sub(m.now()).Milliseconds()
+			if ttl <= 0 {
+				break
+			}
+			result, evalErr := g.Redis().Eval(ctx, redisRevokeFamilyScript, 1,
+				[]string{DefaultPrefixFamily + familyID}, []any{raw, revokedJSON, ttl})
+			if evalErr != nil {
+				return evalErr
+			}
+			if result.Int() == redisRefreshChanged {
+				continue
+			}
+			if result.Int() == 1 {
+				_ = m.removeAccessTokenRedisByID(ctx, family.UserID, family.CurrentAccessTokenID)
+				_ = m.removeAccessTokenRedisByID(ctx, family.UserID, family.SuccessorAccessTokenID)
+			}
+			break
 		}
 	}
 	return nil
